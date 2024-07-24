@@ -9,7 +9,7 @@ if __name__ == '__main__':
     parser.add_argument('-i', '--input', help='CSV file with UniProt IDs')
     parser.add_argument('-c', '--column', help='column name with UniProt IDs')
     parser.add_argument('-o', '--output', help='Output file')
-    parser.add_argument('-f', '--from_db', help='Database to convert from', default='UniProtKB_AC-ID')
+    parser.add_argument('-f', '--from_db', help='Database to convert from. Default is UniProtKB_AC-ID (UniProtKB_AC-ID, PDB)', default='UniProtKB_AC-ID')
     parser.add_argument('-t', '--to_db', help='Database to convert to', default='UniProtKB')
     parser.add_argument('-b', '--batch_size', help='Batch size for downloading', default=5000)
     args = parser.parse_args()
@@ -36,14 +36,69 @@ if __name__ == '__main__':
             
             export_data = []
             for result in results['results']:
-                # Algo que puedo obtener:
-                # {'from': 'A0A5P8Q188', 'to': {'entryType': 'Inactive', 'primaryAccession': 'A0A5P8Q188', 'uniProtkbId': 'A0A5P8Q188_9LACO', 'annotationScore': 0.0, 'inactiveReason': {'inactiveReasonType': 'DELETED', 'deletedReason': 'Redundant proteome'}}}
-                try:
-                    export_data.append([result['from'], result['to']['sequence']['value']])
-                except KeyError:
-                    export_data.append([result['from'], ""])
+                row = []
+                
+                row.append(result['from'])
+                
+                if result['to'] is not None:
 
-            export_df = pd.DataFrame(export_data, columns=['uniprot_id', 'sequence'])
+                    ec_ids = []
+                    try:
+                        for r in result['to']['proteinDescription']['recommendedName']['ecNumbers']:
+                            ec_ids.append(r['value'])
+                    except KeyError:
+                        pass
+
+                    row.append(ec_ids)
+
+                    try:
+                        row.append(result['to']['proteinDescription']['recommendedName']['fullName']['value'])
+                    except KeyError:
+                        row.append("")
+
+                    tmp = {}
+                    references_list = []
+                    
+
+                    try:
+                        for r in result['to']['references']:
+                            tmp["citacionCrossReferences"] = r['citation']['citationCrossReferences']
+                            tmp.update({"title": r['citation']['title']})
+                            references_list.append(tmp)
+                    except KeyError:
+                        pass
+
+                    row.append(references_list)
+
+                    go_ids = []
+                    pfam_ids = []
+
+                    try:
+                        for r in result['to']['uniProtKBCrossReferences']:
+                            if r['database'] == 'GO':
+                                go_ids.append(r['id'])
+                            elif r['database'] == 'pfam':
+                                pfam_ids.append(r['id'])
+                            else:
+                                pass
+                    except KeyError:
+                        pass
+
+                    row.append(go_ids)
+                    row.append(pfam_ids)
+                    
+                    try:
+                        row.append(result['to']['sequence']['value'])
+                        row.append(result['to']['sequence']['length'])
+                        row.append(result['to']['sequence']['molWeight'])
+                    except KeyError:
+                        row.extend(["", "", ""])
+                else:
+                    row.append([result['from'], "", "", "", "", "", "", ""])
+
+                export_data.append(row)
+
+            export_df = pd.DataFrame(export_data, columns=['uniprot_id', 'ec_number','protein_name', 'references', 'go_id', 'pfam_id','sequence', 'length', 'molecular_weight'])
             
             if start == 0:
                 export_df.to_csv(args.output, mode='a', header=True, index=False)

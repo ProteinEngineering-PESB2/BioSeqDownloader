@@ -5,3 +5,5 @@ __pycache__/
 
 input/
 output/
+*.json
+*.csv

@@ -56,12 +56,11 @@ if __name__ == '__main__':
                     except KeyError:
                         row.append("")
 
-                    tmp = {}
                     references_list = []
                     
-
                     try:
                         for r in result['to']['references']:
+                            tmp = {}
                             tmp["citacionCrossReferences"] = r['citation']['citationCrossReferences']
                             tmp.update({"title": r['citation']['title']})
                             references_list.append(tmp)

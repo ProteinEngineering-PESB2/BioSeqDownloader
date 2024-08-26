@@ -76,7 +76,7 @@ if __name__ == '__main__':
                         for r in result['to']['uniProtKBCrossReferences']:
                             if r['database'] == 'GO':
                                 go_ids.append(r['id'])
-                            elif r['database'] == 'pfam':
+                            elif r['database'] == 'Pfam':
                                 pfam_ids.append(r['id'])
                             else:
                                 pass

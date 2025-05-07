@@ -4,6 +4,10 @@ __pycache__/
 .ipynb_checkpoints/
 
 input/
+data/
+src/db
 output/
+tmp/
+
 *.json
 *.csv

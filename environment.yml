@@ -1,0 +1,10 @@
+name: bioseqdownloader
+channels:
+  - bioconda
+  - defaults
+dependencies:
+  - blast
+  - pip:
+    - pandas
+    - tqdm
+    - requests

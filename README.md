@@ -42,9 +42,9 @@ python scripts/aligment.py -d uniprotkb_reviewed -f data/umami.csv -c sequence -
 
 ---
 
-## Downloading UniProt Data
+## Downloading UniProt Data using IDS
 
-The `download.py` script retrieves UniProt data using UniProt IDs. It can also utilize BLAST results from the previous step. Below are the available parameters:
+The `uniprot_search_ids.py` script retrieves UniProt data using UniProt IDs. It can also utilize BLAST results from the previous step. Below are the available parameters:
 
 - `-i`, `--input`: CSV file containing UniProt IDs.
 - `-c`, `--column`: Column name with UniProt IDs (default: `accession`).
@@ -59,6 +59,24 @@ The `download.py` script retrieves UniProt data using UniProt IDs. It can also u
 ```bash
 python scripts/download.py -i results/umami_blast.csv -o results/umami_uniprot.csv
 ```
+## Searching UniProt with Queries
+
+The `uniprot_search_query.py` script allows users to search UniProt using custom queries and retrieve specific fields of interest. Below are the available parameters:
+
+- `-q`, `--query`: Query string to search for (required).
+- `-o`, `--output`: Output file to save the results (required).
+- `-f`, `--fields`: Fields to include in the output (default: `accession,protein_name,sequence,ec,lineage,organism_name,xref_pfam,xref_alphafolddb,xref_pdb,go_id`).
+- `-s`, `--sort`: Sort order for the results (default: `accession asc`).
+- `-fmt`, `--format`: Format of the output (default: `json`).
+- `--include_isoform`: Include isoforms in the results (optional).
+- `--download`: Download the results directly (optional).
+
+### Example:
+```bash
+python src/uniprot_search_query.py -q "antibacterial AND reviewed:true" -o results/uniprot_stream.csv
+```
+
+This example searches for reviewed antibacterial proteins and saves the results in a CSV file. You can customize the query and fields to suit your research needs.
 
 ---
 

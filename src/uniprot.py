@@ -1,12 +1,30 @@
 import requests, re, zlib, json, time
+from typing import List, Dict, Optional
+import csv
+import pandas as pd
+from tqdm import tqdm
 from requests.adapters import HTTPAdapter, Retry
 from xml.etree import ElementTree
+from io import StringIO
+
 from urllib.parse import urlparse, parse_qs, urlencode
+
+from utils import (
+    extract_simple,
+    extract_ec_numbers,
+    extract_go_terms,
+    extract_pfam_ids,
+    extract_alphafold_ids,
+    extract_pdb_ids,
+    extract_references,
+    extract_features,
+    extract_keywords
+)
 
 API_URL = "https://rest.uniprot.org"
 POLLING_INTERVAL = 3 
 
-class UniprotInterface:
+class UniprotBase():
     def __init__(self, total_retries=5):
         self.retries = Retry(total=total_retries, backoff_factor=0.25, status_forcelist=[ 500, 502, 503, 504 ])
         self.session = requests.Session()
@@ -140,3 +158,315 @@ class UniprotInterface:
             else:
                 return bool(j["results"] or j["failedIds"])
 
+
+class UniprotInterface(UniprotBase):
+    def __init__(self, total_retries=5):
+        super().__init__(total_retries)
+        self.db_config = {
+            'uniprot': {
+                'patterns': [r'^[A-N,R-Z][0-9][A-Z][A-Z, 0-9][A-Z, 0-9][0-9]$',
+                            r'^[A-N,R-Z][0-9][A-Z][A-Z, 0-9][A-Z, 0-9][0-9][A-Z][A-Z, 0-9][A-Z, 0-9][0-9]$',
+                            r'^[OPQ][0-9][A-Z0-9][A-Z0-9][A-Z0-9][0-9]$'],
+                'from_db': 'UniProtKB_AC-ID',
+                'to_db': 'UniProtKB'
+            },
+            'pdb': {
+                'patterns': [r'^[0-9][A-Z0-9]{3}$'],
+                'from_db': 'PDB',
+                'to_db': 'UniProtKB'
+            }
+        }
+
+        self.field_map_base = {
+            'accession': ('primaryAccession', extract_simple),
+            'protein_name': ('proteinDescription.recommendedName.fullName.value', extract_simple),
+            'ec_numbers': ('proteinDescription.recommendedName.ecNumbers', extract_ec_numbers),
+            'organism_name': ('organism.scientificName', extract_simple),
+            'taxon_id': ('organism.taxonId', extract_simple),
+            'ineage': ('organism.lineage', extract_simple),
+            'sequence': ('sequence.value', extract_simple),
+            'length': ('sequence.length', extract_simple),
+            'go_terms': ('uniProtKBCrossReferences', extract_go_terms),
+            'pfam_ids': ('uniProtKBCrossReferences', extract_pfam_ids),
+            'alphafold_ids': ('uniProtKBCrossReferences', extract_alphafold_ids),
+            'pdb_ids': ('uniProtKBCrossReferences', extract_pdb_ids),
+            'references': ('references', extract_references),
+            'features': ('features', extract_features),
+            'keywords': ('keywords', extract_keywords),
+        }
+        self.format = None
+    
+    def identify_id_type(self, id_str: str) -> str:
+        """Identifica el tipo de ID basado en patrones regex"""
+        if not isinstance(id_str, str):
+            return None
+            
+        for db_type, config in self.db_config.items():
+            for pattern in config['patterns']:
+                if re.fullmatch(pattern, id_str):
+                    return db_type
+                
+                return None
+
+    def group_ids_by_type(self, ids: List[str]) -> Dict[str, List[str]]:
+        """Agrupa IDs por su tipo detectado"""
+        grouped = {db_type: [] for db_type in self.db_config}
+        grouped['unknown'] = []
+        
+        for id_str in ids:
+            if not isinstance(id_str, str):
+                continue
+                
+            id_type = self.identify_id_type(id_str)
+            if id_type in grouped:
+                grouped[id_type].append(id_str)
+            else:
+                grouped['unknown'].append(id_str)
+        return grouped
+
+
+    def download_batch(
+            self,
+            dataset: pd.DataFrame, 
+            column_ids: str, 
+            auto_db: bool, 
+            from_db: str, 
+            to_db: str, 
+            batch_size: int
+            ):
+        ids = dataset[column_ids].dropna().unique().tolist()
+
+        results = []
+
+        if auto_db:
+            # Automatically detect and group IDs
+            id_groups = self.group_ids_by_type(ids)
+            
+            for db_type, id_list in id_groups.items():
+                if not id_list or db_type == 'unknown':
+                    continue
+                    
+                config = self.db_config[db_type]
+                results = self.process_id_batch(
+                    ids=id_list,
+                    from_db=config['from_db'],
+                    to_db=config['to_db'],
+                    batch_size=batch_size,
+                    db_type=db_type
+                )
+        else:
+            # Manually use the provided from_db/to_db parameters
+            results = self.process_id_batch(
+                ids=ids,
+                from_db=from_db,
+                to_db=to_db,
+                batch_size=batch_size,
+                db_type='manual'
+            )
+        
+        return results
+
+    def process_id_batch(
+            self,
+            ids: List[str], 
+            from_db: str, 
+            to_db: str, 
+            batch_size: int, 
+            db_type: str
+        ):
+        """Procesa un lote de IDs de un tipo específico"""
+        downloader = UniprotInterface()
+        results = []
+        progress_bar = tqdm(
+            range(0, len(ids)), 
+            desc=f"Processing {db_type} IDs", 
+            total=len(ids),
+            dynamic_ncols=True,
+            ncols=0,
+            bar_format="{l_bar}{bar} {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {desc}"
+        )
+        
+        for start in range(0, len(ids), batch_size):
+            batch = ids[start:start+batch_size]
+            job_id = downloader.submit_id_mapping(from_db, to_db, batch)
+            
+            if downloader.check_id_mapping_results_ready(job_id):
+                link = downloader.get_id_mapping_results_link(job_id)
+                search = downloader.get_id_mapping_results_search(link)
+                
+                # Add information about the source to the results
+                if isinstance(search, dict):
+                    for result in search.get('results', []):
+                        result['source_db'] = db_type
+                    results.append(search)
+                    
+            progress_bar.update(len(batch))
+        
+        return results
+
+    def show_results(
+            self,
+            results: List[Dict],
+            raw=False
+        ):
+        if results:
+            if raw:
+                for result in results:
+                    print(result)
+            else:
+                print(f"{len(results)} results to show")
+        else:
+            print("No results to show")
+
+    # TODO Add more formats like fasta
+    def submit_stream(
+            self, 
+            query: str, 
+            fields: str, 
+            sort: str, 
+            include_isoform: Optional[bool] = False, 
+            download: Optional[bool] = False,
+            format: Optional[str] = "json"
+            ):
+        """
+        Submit a query to the Uniprot stream API.
+        Args:
+            query (str): The query string.
+            fields (str): The fields to include in the response.
+            sort (str): The sorting order.
+            include_isoform (bool, optional): Whether to include isoforms. Defaults to False.
+            download (bool, optional): Whether to download the results. Defaults to False.
+            format (str, optional): The format of the response. Defaults to "json".
+        Returns:
+            requests.Response: The response object.
+        """
+        parameters = {
+            "query": query,
+            "fields": fields,
+            "sort": sort,
+            "includeIsoform": include_isoform,
+            "download": download,
+            "format": format,
+        }
+
+        if format == "json":
+            headers = {"Accept": "application/json"}
+        elif format == "tsv":
+            headers = {"Accept": "text/plain;format=tsv"}
+        else:
+            raise ValueError("Unsupported format. Supported formats are: json, xml, fasta, tsv.")
+        
+        self.format = format
+
+        for attempt in range(self.retries.total):
+            try:
+                response = requests.get(
+                    f"{API_URL}/uniprotkb/stream",
+                    params=parameters,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                return response
+            except requests.exceptions.RequestException as e:
+                if attempt < self.retries - 1:
+                    print(f"Attempt {attempt + 1} failed: {e}. Retrying...")
+                    time.sleep(POLLING_INTERVAL)
+                else:
+                    print(f"All attempts failed: {e}.")
+                    return response
+
+    def parse_stream_response(self, query: str, response: requests.Response) -> pd.DataFrame:
+        """
+        Parse the response from the UniProt stream API depending on the format.
+        Args:
+            query (str): The query string.
+            response (requests.Response): The response from the stream API.
+            file_format (str): The format of the response (json, tsv, fasta).
+            mapping (dict, optional): Mapping for parsing JSON response. Defaults to None.
+        Returns:
+            Parsed data in appropriate Python data structure.
+        """
+        return_df = pd.DataFrame()
+
+        if self.format == "json":
+            return_df = self.parse(response.json())
+        
+        elif self.format == "tsv":
+            tsv_data = response.text
+            reader = csv.DictReader(StringIO(tsv_data), delimiter="\t")
+            return_df = pd.DataFrame(reader)
+
+        else:
+            raise ValueError(f"Unsupported format: {self.format}")
+        
+        return_df.insert(0, "query", query)
+
+        return return_df
+    
+    def adapt_field_map(self, field_map: Dict[str, tuple], use_prefix=False):
+        """Adapt the field map to include a prefix if needed"""
+        if not use_prefix:
+            return field_map
+
+        adapted_map = {}
+        for key, (path, extractor) in field_map.items():
+            new_path = f"to.{path}" if not path.startswith("to.") else path
+            adapted_map[key] = (new_path, extractor)
+        return adapted_map
+
+    def _parse_result(self, result: Dict) -> Dict:
+        """Parse a single UniProt result"""
+        parsed = {}
+        field_map = {}
+
+        # Change field_map if 'from' and 'to' keys are present
+        if 'from' in result and 'to' in result:
+            field_map = self.adapt_field_map(self.field_map_base, use_prefix=True)
+        else:
+            field_map = self.field_map_base
+        
+        for field, (path, extractor) in field_map.items():
+            try:
+                # Navigate through the path (e.g. 'to.proteinDescription...')
+                data = result
+                for key in path.split('.'):
+                    if key.isdigit():  # For array indices
+                        key = int(key)
+                    data = data.get(key, {})
+                
+                # Extract the value using the specific function
+                parsed[field] = extractor(data) if data else None
+            except (KeyError, AttributeError, IndexError):
+                parsed[field] = None
+                
+        return parsed
+
+    def parse(self, results: Dict) -> pd.DataFrame:
+        """Parse UniProt JSON results into a DataFrame"""
+        parsed_data = []
+        
+        # Process successful results
+        for result in results.get('results', []):
+            parsed = self._parse_result(result)
+            if 'source_db' in result:
+                parsed['source_db'] = results.get('source_db', 'unknown')
+            parsed_data.append(parsed)
+            
+        # Process failed IDs
+        for failed_id in results.get('failedIds', []):
+            parsed_data.append({
+                'uniprot_id': failed_id,
+                #'source_db': results.get('source_db', 'unknown'),
+                'status': 'failed'
+            })
+            
+        return pd.DataFrame(parsed_data).dropna(axis=1, how='all')
+    
+    def parse_results(self, results: List[Dict]) -> pd.DataFrame:
+        export_df = pd.DataFrame()
+
+        for result in results:
+            parsed_results = self.parse(result)
+            export_df = pd.concat([export_df, parsed_results], ignore_index=True)
+
+        return export_df

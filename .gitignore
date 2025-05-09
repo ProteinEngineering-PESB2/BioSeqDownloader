@@ -8,6 +8,7 @@ data/
 src/db
 output/
 tmp/
+results/
 
 *.json
 *.csv

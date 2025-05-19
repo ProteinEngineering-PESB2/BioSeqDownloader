@@ -12,14 +12,13 @@ from urllib.parse import urlparse, parse_qs, urlencode
 from utils import (
     extract_simple,
     extract_ec_numbers,
-    extract_go_terms,
-    extract_pfam_ids,
-    extract_alphafold_ids,
-    extract_pdb_ids,
+    extract_database_terms,
     extract_references,
     extract_features,
-    extract_keywords
+    extract_keywords,
 )
+
+from utils import DATABASES
 
 API_URL = "https://rest.uniprot.org"
 POLLING_INTERVAL = 3 
@@ -186,10 +185,14 @@ class UniprotInterface(UniprotBase):
             'ineage': ('organism.lineage', extract_simple),
             'sequence': ('sequence.value', extract_simple),
             'length': ('sequence.length', extract_simple),
-            'go_terms': ('uniProtKBCrossReferences', extract_go_terms),
-            'pfam_ids': ('uniProtKBCrossReferences', extract_pfam_ids),
-            'alphafold_ids': ('uniProtKBCrossReferences', extract_alphafold_ids),
-            'pdb_ids': ('uniProtKBCrossReferences', extract_pdb_ids),
+            'go_terms': ('uniProtKBCrossReferences', extract_database_terms),
+            'pfam_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'alphafold_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'pdb_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'kegg_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'brenda_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'reactome_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'refseq_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'references': ('references', extract_references),
             'features': ('features', extract_features),
             'keywords': ('keywords', extract_keywords),
@@ -435,7 +438,10 @@ class UniprotInterface(UniprotBase):
                     data = data.get(key, {})
                 
                 # Extract the value using the specific function
-                parsed[field] = extractor(data) if data else None
+                if field in DATABASES.keys():
+                    parsed[field] = extractor(data, DATABASES[field]) if data else None
+                else:
+                    parsed[field] = extractor(data) if data else None
             except (KeyError, AttributeError, IndexError):
                 parsed[field] = None
                 

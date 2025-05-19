@@ -2,6 +2,18 @@ from typing import Any, Dict, List
 import re
 import pandas as pd
 
+# Constants
+DATABASES = {
+    'go_terms': 'GO',
+    'pfam_ids': 'Pfam',
+    'alphafold_ids': 'AlphaFoldDB',
+    'pdb_ids': 'PDB',
+    'kegg_ids': 'KEGG',
+    'brenda_ids': 'BRENDA',
+    'reactome_ids': 'Reactome',
+    'refseq_ids': 'RefSeq'
+}
+
 # Specific extraction functions
 def extract_simple(value: Any) -> Any:
     """Extracts a simple value from the data"""
@@ -11,21 +23,9 @@ def extract_ec_numbers(ec_data: List) -> List[str]:
     """Extracts EC numbers"""
     return [ec['value'] for ec in ec_data] if isinstance(ec_data, list) else []
 
-def extract_go_terms(xrefs: List) -> List[str]:
-    """Extracts GO terms"""
-    return [x['id'] for x in xrefs if isinstance(x, dict) and x.get('database') == 'GO']
-
-def extract_pfam_ids(xrefs: List) -> List[str]:
-    """Extracts Pfam IDs"""
-    return [x['id'] for x in xrefs if isinstance(x, dict) and x.get('database') == 'Pfam']
-
-def extract_alphafold_ids(xrefs: List) -> List[str]:
-    """Extracts AlphaFold IDs"""
-    return [x['id'] for x in xrefs if isinstance(x, dict) and x.get('database') == 'AlphaFoldDB']
-
-def extract_pdb_ids(xrefs: List) -> List[str]:
-    """Extracts PDB IDs"""
-    return [x['id'] for x in xrefs if isinstance(x, dict) and x.get('database') == 'PDB']
+def extract_database_terms(xrefs: List, database: str) -> List[str]:
+    """Extracts database terms"""
+    return [x['id'] for x in xrefs if isinstance(x, dict) and x.get('database') in database]
 
 def extract_references(refs: List) -> List[Dict]:
     """Extracts references"""

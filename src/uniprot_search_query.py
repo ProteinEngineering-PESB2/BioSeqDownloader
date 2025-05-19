@@ -7,7 +7,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Download data from the web')
     parser.add_argument('-o', '--output', help='Output file', required=True)
     parser.add_argument('-q', '--query', help='Query to search for', required=True)
-    parser.add_argument('-f', '--fields', help='Fields to include in the output', default="accession,protein_name,sequence,ec,lineage,organism_name,xref_pfam,xref_alphafolddb,xref_pdb,go_id")
+    parser.add_argument('-f', '--fields', help='Fields to include in the output', default="accession,protein_name,sequence,ec,lineage,organism_name,xref_pfam,xref_kegg,xref_alphafolddb,xref_refseq,xref_brenda,xref_reactome,xref_pdb,go_id")
     parser.add_argument('-s', '--sort', help='Sort order for the results', default="accession asc")
     parser.add_argument('-fmt', '--format', help='Format of the output', default="json")
     parser.add_argument('--include_isoform', action='store_true', help='Include isoforms in the results')

@@ -9,6 +9,9 @@ src/db
 output/
 tmp/
 results/
+src/.alphafold_cache/
+src/.pdb_cache/
+
 
 *.json
 *.csv

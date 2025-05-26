@@ -15,3 +15,5 @@ src/.pdb_cache/
 
 *.json
 *.csv
+*.cif
+*.pdb

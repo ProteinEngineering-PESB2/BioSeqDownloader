@@ -18,10 +18,12 @@ from utils import (
     extract_keywords,
 )
 
-from utils import DATABASES
+from constants import DATABASES
 
 API_URL = "https://rest.uniprot.org"
 POLLING_INTERVAL = 3 
+
+# TODO for some reason xref_string is not working
 
 class UniprotBase():
     def __init__(self, total_retries=5):
@@ -193,6 +195,8 @@ class UniprotInterface(UniprotBase):
             'brenda_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'reactome_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'refseq_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'interpro_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'string_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'references': ('references', extract_references),
             'features': ('features', extract_features),
             'keywords': ('keywords', extract_keywords),
@@ -209,7 +213,7 @@ class UniprotInterface(UniprotBase):
                 if re.fullmatch(pattern, id_str):
                     return db_type
                 
-                return None
+                return ""
 
     def group_ids_by_type(self, ids: List[str]) -> Dict[str, List[str]]:
         """Agrupa IDs por su tipo detectado"""

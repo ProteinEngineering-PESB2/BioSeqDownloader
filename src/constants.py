@@ -58,3 +58,13 @@ KEGG = DBConfig(
     API_URL="https://rest.kegg.jp/",
     CACHE_DIR=os.path.join(BASE_CACHE_DIR, "KEGG")
 )
+
+GENONTOLOGY = DBConfig(
+    API_URL="https://api.geneontology.org/api/",
+    CACHE_DIR=os.path.join(BASE_CACHE_DIR, "genontology")
+)
+
+BIOGRID = DBConfig(
+    API_URL="https://webservice.thebiogrid.org/",
+    CACHE_DIR=os.path.join(BASE_CACHE_DIR, "biogrid")
+)

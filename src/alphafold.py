@@ -1,6 +1,6 @@
 import requests, re, os, time, threading, random
 from pathlib import Path
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Union, List, Dict
 from requests.adapters import HTTPAdapter, Retry
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -17,8 +17,13 @@ class AlphafoldInterface():
             min_wait: float = 0, 
             max_wait: float = 2, 
             structures: List[str] = ["pdb"],
+<<<<<<< Updated upstream
             fields_to_extract: Optional[Union[list, dict]] = None,
             output_dir: Optional[str] = None
+=======
+            fields_to_extract: Optional[Union[List, Dict]] = None,
+            output_dir: Optional[str] = ""
+>>>>>>> Stashed changes
         ):
         """
         Initialize the AlphafoldInterface.
@@ -28,13 +33,13 @@ class AlphafoldInterface():
             min_wait (float): Minimum wait time between requests.
             max_wait (float): Maximum wait time between requests.
             structures (List[str]): List of structures extensions to download. Available options are ["pdb", "cif", "bcif"] or none.
-            self.fields_to_extract (list|dict): Fields to keep from the original response.
-                - If list: Keep those keys.
-                - If dict: Maps {desired_name: real_field_name}.
+            self.fields_to_extract (List|Dict): Fields to keep from the original response.
+                - If List: Keep those keys.
+                - If Dict: Maps {desired_name: real_field_name}.
             for more information, see: https://alphafold.ebi.ac.uk/#/public-api/get_predictions_api_prediction__qualifier__get
             output_dir (str): Directory to save downloaded files. If None, defaults to the cache directory.
         """
-        self.retries = Retry(total=total_retries, backoff_factor=0.25, status_forcelist=[ 500, 502, 503, 504 ])
+        self.retries = Retry(total=total_retries, backoff_factor=0.25, status_forceList=[ 500, 502, 503, 504 ])
         self.session = requests.Session()
         self.session.mount('https://', HTTPAdapter(max_retries=self.retries))
         self.session.headers.update({"Content-Type": "application/json"})
@@ -48,13 +53,13 @@ class AlphafoldInterface():
             output_dir
         ) if output_dir else ALPHAFOLD.CACHE_DIR
 
-    def fetch_prediction(self, uniprot_id) -> dict:
+    def fetch_prediction(self, uniprot_id) -> Dict:
         """
         Get prediction for a given UniProt ID.
         Args:
             uniprot_id (str): UniProt ID to fetch prediction for.
         Returns:
-            dict: Prediction data.
+            Dict: Prediction data.
         """
         url = f"{ALPHAFOLD.API_URL}{uniprot_id}"
         
@@ -68,15 +73,15 @@ class AlphafoldInterface():
         return response.json()
 
     
-    def parse_prediction(self, prediction: dict) -> dict:
+    def parse_prediction(self, prediction: Dict) -> Dict:
         """
         Parse the prediction data.
         Args:
-            prediction (dict): Prediction data.
+            prediction (Dict): Prediction data.
             structures (bool): Whether to download the structure.
 
         Returns:
-            dict: Parsed prediction data.
+            Dict: Parsed prediction data.
         """
         parsed = {}
 
@@ -84,11 +89,11 @@ class AlphafoldInterface():
         if self.fields_to_extract is None:
             parsed = get_nested(prediction, "")
 
-        elif isinstance(self.fields_to_extract, list):
+        elif isinstance(self.fields_to_extract, List):
             for key in self.fields_to_extract:
                 parsed[key] = get_nested(prediction, key)
 
-        elif isinstance(self.fields_to_extract, dict):
+        elif isinstance(self.fields_to_extract, Dict):
             for new_key, nested_path in self.fields_to_extract.items():
                 parsed[new_key] = get_nested(prediction, nested_path)
         
@@ -107,14 +112,14 @@ class AlphafoldInterface():
                             f.write(response.content)
         return parsed
 
-    def fetch_and_parse_predictions(self, uniprot_id: str) -> list:
+    def fetch_and_parse_predictions(self, uniprot_id: str) -> List:
         """
         Get and parse predictions for a given UniProt ID.
         Args:
             uniprot_id (str): UniProt ID to fetch predictions for.
             structures (bool): Whether to download structure files.
         Returns:
-            list: List of parsed predictions.
+            List: List of parsed predictions.
         """
         print(f"Fetching prediction for {uniprot_id}")
         prediction = self.fetch_prediction(uniprot_id)
@@ -124,11 +129,11 @@ class AlphafoldInterface():
         
         return [self.parse_prediction(p) for p in prediction]
     
-    def download_from_uniprot_ids(self, ids: list) -> pd.DataFrame:
+    def download_from_uniprot_ids(self, ids: List) -> pd.DataFrame:
         """
-        Download predictions for a list of UniProt IDs.
+        Download predictions for a List of UniProt IDs.
         Args:
-            ids (list): List of UniProt IDs to fetch predictions for.
+            ids (List): List of UniProt IDs to fetch predictions for.
             structures (bool): Whether to download structure files.
             max_workers (int): Maximum number of parallel requests.
         Returns:

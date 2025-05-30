@@ -213,7 +213,7 @@ class UniprotInterface(UniprotBase):
                 if re.fullmatch(pattern, id_str):
                     return db_type
                 
-                return None
+                return ""
 
     def group_ids_by_type(self, ids: List[str]) -> Dict[str, List[str]]:
         """Agrupa IDs por su tipo detectado"""

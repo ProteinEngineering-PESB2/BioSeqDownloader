@@ -127,7 +127,7 @@ class InterproInstance():
             dict: The parsed data.
         """
         if not results:
-            return None
+            return {}
         
         parsed_list = []
 

@@ -17,13 +17,8 @@ class AlphafoldInterface():
             min_wait: float = 0, 
             max_wait: float = 2, 
             structures: List[str] = ["pdb"],
-<<<<<<< Updated upstream
-            fields_to_extract: Optional[Union[list, dict]] = None,
-            output_dir: Optional[str] = None
-=======
             fields_to_extract: Optional[Union[List, Dict]] = None,
             output_dir: Optional[str] = ""
->>>>>>> Stashed changes
         ):
         """
         Initialize the AlphafoldInterface.
@@ -69,7 +64,7 @@ class AlphafoldInterface():
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
             print(f"Error fetching prediction for {uniprot_id}: {e}")
-            return None
+            return {}
         return response.json()
 
     

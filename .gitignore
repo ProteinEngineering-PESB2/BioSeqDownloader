@@ -17,3 +17,6 @@ src/.pdb_cache/
 *.csv
 *.cif
 *.pdb
+*.html
+*.log
+.env

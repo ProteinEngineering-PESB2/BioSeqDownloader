@@ -104,19 +104,22 @@ def get_feature_keys(data: dict, sep: str = ".") -> dict:
         data = data[0]  # Use the first element of the list to determine the type
     
 
-    for key, value in data.items():
-        if isinstance(value, dict):
-            nested_keys = get_feature_keys(value, sep=sep)
-            for nested_key, nested_value in nested_keys.items():
-                keys[f"{key}{sep}{nested_key}"] = f"{type(value).__name__}({nested_value})"   
-        if isinstance(value, list):
-            # Use the first element of the list to determine the type
-            if isinstance(value[0], dict):
-                nested_keys = get_feature_keys(value[0], sep=sep)
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if isinstance(value, dict):
+                nested_keys = get_feature_keys(value, sep=sep)
                 for nested_key, nested_value in nested_keys.items():
-                    keys[f"{key}{sep}{nested_key}"] = nested_value
+                    keys[f"{key}{sep}{nested_key}"] = f"{type(value).__name__}({nested_value})"   
+            if isinstance(value, list):
+                # Use the first element of the list to determine the type
+                if isinstance(value[0], dict):
+                    nested_keys = get_feature_keys(value[0], sep=sep)
+                    for nested_key, nested_value in nested_keys.items():
+                        keys[f"{key}{sep}{nested_key}"] = nested_value
+                else:
+                    keys[key] = f"list({type(value[0]).__name__})"
             else:
-                keys[key] = f"list({type(value[0]).__name__})"
-        else:
-            keys[key] = type(value).__name__
+                keys[key] = type(value).__name__
+    else:
+        keys["value"] = type(data).__name__
     return keys

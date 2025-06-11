@@ -1,10 +1,13 @@
 import time, random, os, hashlib, json
 import requests
+from typing import Any
 from requests.adapters import HTTPAdapter, Retry
 import pandas as pd
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from typing import Union, List, Dict, Optional
+
+from .utils import get_feature_keys
 
 class BaseAPIInterface(ABC):
 
@@ -21,7 +24,7 @@ class BaseAPIInterface(ABC):
         Initialize the BaseAPIInterface class.
         
         Args:
-            cahce_dir (str): Directory to store cached data.
+            cache_dir (str): Directory to store cached data.
             max_workers (int): Maximum number of parallel requests.
             min_wait (float): Minimum wait time between requests.
             max_wait (float): Maximum wait time between requests.
@@ -55,16 +58,20 @@ class BaseAPIInterface(ABC):
         """
         time.sleep(random.uniform(self.min_wait, self.max_wait))
 
-    def _make_cache_key(self, input_obj: Union[str, tuple, dict]) -> str:
+    def _make_cache_key(self, input_obj: Union[str, tuple, dict], **kwargs) -> str:
         """Generate a strin key from the input object."""
         if isinstance(input_obj, str):
-            return input_obj
+            base = input_obj
         elif isinstance(input_obj, tuple):
-            return "_".join(map(str, input_obj))
+            base = "_".join(map(str, input_obj))
         elif isinstance(input_obj, dict):
-            return json.dumps(input_obj, sort_keys=True)
+            base = json.dumps(input_obj, sort_keys=True)
         else:
             raise ValueError("Input must be a string, tuple, or dictionary.")
+        
+        # Include relevant kwargs (like 'operation') in the cache key
+        extra = json.dumps({k: kwargs[k] for k in sorted(kwargs)}, sort_keys=True)
+        return f"{base}_{extra}"
 
     def _hash_key(self, key: str) -> str:
         return hashlib.md5(key.encode("utf-8")).hexdigest()
@@ -75,8 +82,6 @@ class BaseAPIInterface(ABC):
         """
         hashed_key = self._hash_key(identifier)
         return os.path.join(self.cache_dir, f"{hashed_key}.json")
-        hashed = self._hash_key(identifier)
-        return os.path.join(self.cache_dir, f"{hashed}.json")
     
     def has_results(self, identifier: str) -> bool:
         """
@@ -99,7 +104,7 @@ class BaseAPIInterface(ABC):
         return None
 
     def save_cache(self, identifier: str, data: Union[List, Dict, pd.DataFrame]) -> None:
-        """SAve results to cache."""
+        """Save results to cache."""
         path = self._get_cache_path(identifier)
 
         if isinstance(data, pd.DataFrame):
@@ -108,16 +113,16 @@ class BaseAPIInterface(ABC):
             with open(path, 'w') as f:
                 json.dump(data, f)
 
-    def _maybe_parse(self, data, parse: bool):
+    def _maybe_parse(self, raw_data, parse: bool, **kwargs) -> Union[List, Dict]:
         if not parse:
-            return data
-        if isinstance(data, list):
-            return [self.parse(d) for d in data]
-        elif isinstance(data, dict):
-            return self.parse(data)
-        return data
+            return raw_data
+        if isinstance(raw_data, list):
+            return [self.parse(raw_data=d, **kwargs) for d in raw_data]
+        elif isinstance(raw_data, dict):
+            return self.parse(raw_data=raw_data, **kwargs)
+        return raw_data
     
-    def fetch_single(self, query: Union[str, tuple, dict], parse: bool = False):
+    def fetch_single(self, query: Union[str, tuple, dict], parse: bool = False, *args, **kwargs) -> Union[List, Dict]:
         """
         General-purpose fetch method with optional parsing and cache handling.
 
@@ -127,24 +132,24 @@ class BaseAPIInterface(ABC):
         Returns:
             Any: Fetched data, parsed if requested.
         """
-        cache_key = self._make_cache_key(query)
+        cache_key = self._make_cache_key(query, **kwargs)
 
         if self.has_results(cache_key):
             cached = self.load_cache(cache_key)
             result = cached.to_dict(orient='records') if isinstance(cached, pd.DataFrame) else cached
         else:
-            result = self.fetch(query)
+            result = self.fetch(query=query, *args, **kwargs)
             if result:
                 self.save_cache(cache_key, result)
         
         if parse:
             if isinstance(result, list):
-                return [self.parse(r) for r in result]
+                return [self.parse(raw_data=r, **kwargs) for r in result]
             elif isinstance(result, dict):
-                return self.parse(result)
+                return self.parse(raw_data=result, **kwargs)
         return result
     
-    def fetch_batch(self, queries: List[Union[str, tuple, dict]], parse: bool = False) -> List:
+    def fetch_batch(self, queries: List[Union[str, tuple, dict]], parse: bool = False, *args, **kwargs) -> List:
         """
         Fetch data in parallel for a batch of queries.
         Args:
@@ -160,11 +165,11 @@ class BaseAPIInterface(ABC):
         index_query_map = {}
 
         for i, query in enumerate(queries):
-            cache_key = self._make_cache_key(query)
+            cache_key = self._make_cache_key(query, **kwargs)
             if self.has_results(cache_key):
                 cached = self.load_cache(cache_key)
                 result = cached.to_dict(orient='records') if isinstance(cached, pd.DataFrame) else cached
-                results[i] = self._maybe_parse(result, parse)
+                results[i] = self._maybe_parse(raw_data=result, parse=parse, **kwargs)
             else:
                 index_query_map[i] = query
                 queries_to_fetch.append(query)
@@ -172,7 +177,7 @@ class BaseAPIInterface(ABC):
         # Fetch missing ones in parallel
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_to_index = {
-                executor.submit(self.fetch_single, query, parse): i
+                executor.submit(self.fetch_single, query, parse, *args, **kwargs): i
                 for i, query in index_query_map.items()
             }
             for future in future_to_index:
@@ -184,12 +189,46 @@ class BaseAPIInterface(ABC):
                     print(f"Error fetching query at index {i} ({queries[i]}): {e}")
                 self._delay()
 
-        return results
+        # Flatten results if they are lists with np.concatenate
+        flattened_results = []
+        for result in results:
+            if isinstance(result, dict):
+                flattened_results.append(result)
+            elif isinstance(result, list):
+                flattened_results.extend(r for r in result if isinstance(r, dict))
+        
+        return flattened_results
     
+    def get_dummy(self, *args, **kwargs) -> dict:
+        """
+        Get a dummy object for the API interface.
+        This is useful for knowing the structure of the data returned by the API.
+        """
+        query = kwargs.pop('query', None)
+        parse = kwargs.pop('parse', False)
+
+        if not query:
+            raise ValueError("Query must be provided to get dummy data.")
+
+        response = self.fetch_single(query=query, parse=parse, *args, **kwargs)
+
+        if isinstance(response, list):
+            return get_feature_keys(response[0] if response else {})
+        elif isinstance(response, dict):
+            return get_feature_keys(response)
+        else:
+            raise ValueError("Response must be a list or a dictionary.")
+                
     @abstractmethod
-    def fetch(self, *args, **kwargs):
+    def query_usage(self) -> str:
         raise NotImplementedError
     
     @abstractmethod
-    def parse(self, *args, **kwargs):
+    def fetch(self, query: Union[str, tuple, dict], **kwargs):
         raise NotImplementedError
+    
+    @abstractmethod
+    def parse(self, raw_data: Any, **kwargs):
+        raise NotImplementedError
+    
+        

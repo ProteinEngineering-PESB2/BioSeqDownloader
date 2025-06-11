@@ -22,6 +22,7 @@ BASE_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.ca
 @dataclass(frozen=True)
 class DBConfig:
     API_URL: str
+    STRUCTURE_URL: Optional[str] = None
     CACHE_DIR: Optional[str] = None
 
 ALPHAFOLD = DBConfig(
@@ -30,7 +31,8 @@ ALPHAFOLD = DBConfig(
 )
 
 PDB = DBConfig(
-    API_URL="https://files.rcsb.org/download/",
+    API_URL="https://data.rcsb.org/rest/v1/core/",
+    STRUCTURE_URL="https://files.rcsb.org/download/",
     CACHE_DIR = os.path.join(BASE_CACHE_DIR, "pdb")
 )
 

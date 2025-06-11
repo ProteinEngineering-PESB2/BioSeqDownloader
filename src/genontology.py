@@ -1,117 +1,110 @@
+import os
 from typing import Optional, Union, List, Dict, Any
 import requests, random, time
 
 import pandas as pd
 
+from .base import BaseAPIInterface
 from .constants import GENONTOLOGY
 from .utils import get_nested
 
-METHODS = [
-    "ontology-term",
-    "go"
-]
-
-METHOD_OPTIONS = {
-    "ontology-term": ["graph", "subgraph"],
-    "go": ["hierarchy", "models"]
+METHODS = {
+    "ontology-term": [""],
+    "go": [""]
 }
 
-class GenOntologyInterface():
+class GenOntologyInterface(BaseAPIInterface):
     def __init__(
             self,
-            max_workers: int = 5,
-            min_wait: int = 1,
-            max_wait: int = 2,
             fields_to_extract: Optional[Union[List, Dict]] = None,
+            output_dir: Optional[str] = None,
+            **kwargs
     ):
         """
         Initialize the GenOntologyInterface class.
         Args:
-            max_workers (int): Maximum number of workers for parallel processing.
-            min_wait (int): Minimum wait time between requests.
-            max_wait (int): Maximum wait time between requests.
             fields_to_extract (list or dict): Fields to extract from the response.
         """
-        self.max_workers = max_workers
-        self.min_wait = min_wait
-        self.max_wait = max_wait
+        cache_dir = GENONTOLOGY.CACHE_DIR if GENONTOLOGY.CACHE_DIR is not None else ""
+        super().__init__(cache_dir=cache_dir, **kwargs)
+        self.output_dir = output_dir or cache_dir
+        os.makedirs(self.output_dir, exist_ok=True)
         self.fields_to_extract = fields_to_extract
 
     def fetch(
             self,
-            method: str,
-            query: str,
-            option: Optional[str] = None,
+            query: Union[str, tuple, dict],
+            **kwargs
     ):
         """
         Fetch data from the GenOntology API.
         Args:
-            method (str): Method to use for the request. Used methods are 'ontology-term' and 'go'.
             query (str): Query string to search for.
-            option (str): Additional options for the request.
-                - For 'ontology-term' method, options can be 'graph' or 'subgraph'.
-                - For 'go' method, options can be 'hierarchy' or 'models'.    
+            **kwargs: Additional parameters for the request.
+            - `method`: Method to use for the request. Used methods are 'ontology-term' and 'go'.
+            - `option`: Additional options for the request. (currently not used)  
         Returns:
             any: response from the API.
         """
-        if method not in METHODS:
-                raise ValueError(f"Method {method} is not supported. Supported methods are: {', '.join(METHODS)}.")
-        if option and option not in METHOD_OPTIONS.get(method, []):
-            raise ValueError(f"Option {option} is not supported for method {method}. Supported options are: {', '.join(METHOD_OPTIONS.get(method, []))}.")
+        method = kwargs.get("method")  # Default method is 'ontology-term'
+        option = kwargs.get("option")
+
+        if method and method not in METHODS.keys():
+                raise ValueError(f"Method {method} is not supported. Supported methods are: {', '.join(METHODS.keys())}.")
+        if option and option not in METHODS.get(method, []):
+            raise ValueError(f"Option {option} is not supported for method {method}. Supported options are: {', '.join(METHODS.get(method, []))}.")
 
         url = f"{GENONTOLOGY.API_URL}{method.replace('-', '/')}/{query.upper().replace(':', '%3A')}" # Replace ':' with '%3A' for URL encoding
 
         if option:
             url += f"/{option}"
-        print(f"Fetching data from {url}")
 
         try:
-            response = requests.get(url)
-            time.sleep(random.uniform(self.min_wait, self.max_wait))
-            if response.status_code == 200:
-                 return response
-            else:
-                print(f"Failed to fetch data from GenOntology API, code {response.status_code}")
-                return {}
+            response = self.session.get(url)
+            self._delay()
+            response.raise_for_status()
+            return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Request failed: {e}")
+            print(f"Error fetching data for {query} with method {method}: {e}")
             return {}
 
     def parse(
             self,
-            response: Any,
-            look_for_relationships: bool = False,
+            raw_data: Any,
+            **kwargs
     ) -> Dict:
         """
         Parse the response from the GenOntology API.
         Args:
-            response (any): Response from the API.
-            look_for_relationships (bool): If True, will look for relationships in the response.
+            raw_data (Any): Raw data from the API response.
+            **kwargs: Additional parameters for parsing.
+            - `look_for_relationships`: If True, fetch related ontology terms.
         Returns:
             dict: Parsed response.
         """
-        if not response:
+        look_for_relationships = kwargs.get("look_for_relationships")
+        if not raw_data:
             return {}
 
-        if isinstance(response, requests.models.Response):
-            data = response.json()
-        elif isinstance(response, dict):
-            data = response
+        if isinstance(raw_data, requests.models.Response):
+            raw_data = raw_data.json()
+        elif isinstance(raw_data, dict):
+            raw_data = raw_data
         else:
             raise ValueError("Response must be a requests.Response object or a dictionary.")
         
         parsed = {}
 
         if self.fields_to_extract is None:
-            parsed = get_nested(data, "")
+            parsed = get_nested(raw_data, "")
 
         elif isinstance(self.fields_to_extract, list):
             for key in self.fields_to_extract:
-                parsed[key] = get_nested(data, key)
+                parsed[key] = get_nested(raw_data, key)
 
         elif isinstance(self.fields_to_extract, dict):
             for new_key, nested_path in self.fields_to_extract.items():
-                parsed[new_key] = get_nested(data, nested_path)
+                parsed[new_key] = get_nested(raw_data, nested_path)
         else:
             raise ValueError("fields_to_extract must be a list or a dictionary.")
 
@@ -131,41 +124,41 @@ class GenOntologyInterface():
 
         return parsed
     
-    def fetch_to_dataframe(
-            self,
-            method: str,
-            query: Union[str, List[str]],
-            option: Optional[str] = None,
-            look_for_relationships: bool = False
-    ) -> Dict:
+    def get_dummy(self, *, method: Optional[str] = None, **kwargs) -> Dict:
         """
-        Fetch data from the GenOntology API and parse it into a dictionary.
-        Args:
-            method (str): Method to use for the request.
-            query (str or list): Query string or list of strings to search for.
-            option (str): Additional options for the request.
-                - For 'ontology-term' method, options can be 'graph' or 'subgraph'.
-                - For 'go' method, options can be 'hierarchy' or 'models'.
-            look_for_relationships (bool): If True, will look for relationships in the response.
-        Returns:
-            dict: Parsed response from the API.
-        """
-        export_df = pd.DataFrame()
+        Get example data returned by the API.
 
-        if isinstance(query, str):
-            response = self.fetch(method, query, option)
-            parsed_data = self.parse(response, look_for_relationships=look_for_relationships)
-            export_df = pd.DataFrame([parsed_data])
-        elif isinstance(query, list):
-            for q in query:
-                response = self.fetch(method, q, option)
-                parsed_data = self.parse(response, look_for_relationships=look_for_relationships)
-                export_df = pd.concat([export_df, pd.DataFrame([parsed_data])], ignore_index=True)
+        Args:
+            method (str, optional): Specific API method to test (e.g., "ontology-term", "subgraph").
+                If None, returns dummy data for all available methods.
+
+        Returns:
+            dict: A dictionary where each key is a method name and each value is example data.
+        """
+        dummy_results = {}
+
+        query = "GO:0008150"
+
+        if method:
+            dummy_results = super().get_dummy(query=query, method=method, **kwargs)
         else:
-            raise ValueError("Query must be a string or a list of strings.")
-        if export_df.empty:
-            print("No data found for the given query.")
-            return export_df
-  
-        return export_df.reset_index(drop=True)
-            
+            for method in METHODS.keys():
+                for option in METHODS[method]:
+                        dummy_results[
+                            f"{method}_{option}" if option else method
+                        ] = super().get_dummy(query=query, method=method, option=option, **kwargs)
+
+        return dummy_results 
+    
+    def query_usage(self) -> str:
+        return (
+            "GenOntology API allows you to fetch ontology terms and their relationships.\n"
+            "Available methods:\n"
+            "- ontology-term: Fetch ontology term details.\n"
+            "- go: Fetch Gene Ontology hierarchy or models.\n"
+            "Options for 'ontology-term': graph, subgraph.\n"
+            "Options for 'go': hierarchy, models.\n"
+            "Example usage:\n"
+            "  - Fetch ontology term: fetch_single('GO:0008150', method='ontology-term')\n"
+            "  - Fetch GO hierarchy: fetch_single('GO:0008150', method='go', option='hierarchy')\n"
+        )

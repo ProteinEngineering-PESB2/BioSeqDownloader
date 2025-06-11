@@ -1,8 +1,10 @@
-from typing import Optional, Union, List, Dict
-import requests, time, random
+import os
+from typing import Optional, Union, List, Dict, Any
+import requests
 
 import pandas as pd
 
+from .base import BaseAPIInterface
 from .constants import BIOGRID
 from .utils import get_nested
 
@@ -25,58 +27,53 @@ query_params_base = {
     "evidenceList" : (None, "string", "Comma-separated list of evidence codes to filter results"),
     "includeEvidence" : (False, "boolean", "If ‘true’, evidence codes will be included in the results"),
     "geneList" : (None, "string", "List of gene names to filter results."),
+    "taxId" : (None, "string", "Taxonomy ID of the organism to filter results. If not provided, all organisms will be included."),
     "searchIds" : (False, "boolean", "If ‘true’, the interactor ENTREZ_GENE, ORDERED LOCUS and SYSTEMATIC_NAME (orf) will be examined for a match with the geneList."),
     "format" : ("tab2", "string", "Format of the response. Options are 'tab1','tab2', 'extendedTab2', 'count', 'json', 'jsonExtended'. Default is 'tab2'."),
 }
 
-# TODO considerar si hacer default json o no
-# TODO falta threading o batching
 
-class BioGRIDInterface():
+class BioGRIDInterface(BaseAPIInterface):
     def __init__(
             self,
-            max_workers: int = 5,
-            min_wait: int = 1,
-            max_wait: int = 2,
             fields_to_extract: Optional[Union[List, Dict]] = None,
+            output_dir: Optional[str] = None,
+            **kwargs
     ):
         """
         Initialize the BioGRIDInterface class.
         Args:
-            max_workers (int): Maximum number of workers for parallel processing.
-            min_wait (int): Minimum wait time between requests.
-            max_wait (int): Maximum wait time between requests.
             fields_to_extract (list or dict): Fields to extract from the response.
         """
-        self.max_workers = max_workers
-        self.min_wait = min_wait
-        self.max_wait = max_wait
+        
+        cache_dir = BIOGRID.CACHE_DIR if BIOGRID.CACHE_DIR is not None else ""
+        super().__init__(cache_dir=cache_dir, **kwargs)
         self.fields_to_extract = fields_to_extract
-    
-    def usage(self):
-        """
-        Prnt the usage of the BioGRID API.
-        Returns:
-            str: Usage information.
-        """
-        return "\n".join([f"{key}: {value[0]} ({value[1]}) - {value[2]}" for key, value in query_params_base.items()])
+        self.output_dir = output_dir or cache_dir
+        os.makedirs(self.output_dir, exist_ok=True)
     
     def fetch(
             self,
-            method: str,
-            query: Dict = {}
+            query: Union[str, tuple, dict],
+            **kwargs
     ):
         """
         Fetch data from the BioGRID API.
         Args:
-            method (str): Method to use for the request. Currently, only 'interaction' is supported.
-            query (Dict): Query parameters to filter the results.
+            query (str): Query string to search for.
+            **kwargs: Additional parameters for the request.
+            - `method`: Method to use for the request. Used methods are
+            'interactions', 'organisms', 'identifiers', 'evidence'.
         Returns:
             any: response from the API.
         """
+        method = kwargs.get("method")
+
         if method not in METHODS:
             raise ValueError(f"Method {method} is not supported. Supported methods are: {', '.join(METHODS)}.")
-        
+        if not isinstance(query, dict):
+            raise ValueError("Query must be a dictionary with keys matching the query parameters.")
+
         for key in query.keys():
             if key not in query_params_base:
                 raise ValueError(f"Query parameter {key} is not supported. Supported parameters are: {', '.join(query_params_base.keys())}.")
@@ -95,22 +92,19 @@ class BioGRIDInterface():
 
         url = url.rstrip("&")
         
-        print(f"Fetching data from {url}")
         try:
-            response = requests.get(url)
-            time.sleep(random.uniform(self.min_wait, self.max_wait))
-            if response.status_code == 200:
-                 return response
-            else:
-                print(f"Failed to fetch data from BioGRID API, code {response.status_code}")
-                return {}
+            response = self.session.get(url)
+            self._delay()
+            response.raise_for_status()
+            return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Request failed: {e}")
+            print(f"Error fetching prediction for {query}: {e}")
             return {}
 
     def parse(
             self,
-            response: requests.Response
+            raw_data: Any,
+            **kwargs
     ):
         """
         Parse the response from the BioGRID API.
@@ -119,19 +113,19 @@ class BioGRIDInterface():
         Returns:
             any: Parsed data from the response.
         """
-        if not response:
+        if not raw_data:
             return {}
 
-        if isinstance(response, requests.models.Response):
-            data = response.json()
-        elif isinstance(response, dict):
-            data = response
+        if isinstance(raw_data, requests.models.Response):
+            raw_data = raw_data.json()
+        elif isinstance(raw_data, dict):
+            raw_data = raw_data
         else:
             raise ValueError("Response must be a requests.Response object or a dictionary.")
         
         parsed_list = []
 
-        for _, value in data.items():
+        for _, value in raw_data.items():
             parsed = {}
             if self.fields_to_extract is None:
                 parsed = get_nested(value, "")
@@ -149,21 +143,94 @@ class BioGRIDInterface():
             parsed_list.append(parsed)
         
         return parsed_list
-            
-
-    def fetch_to_dataframe(
-            self,
-            method: str,
-            query: Dict = {}
-    ):
-        """
-        Fetch data from the BioGRID API and return it as a pandas DataFrame.
-        Args:
-            method (str): Method to use for the request.
-            query (Dict): Query parameters to filter the results.
-        Returns:
-            pd.DataFrame: DataFrame containing the fetched data.
-        """
-        response = self.fetch(method, query)
-        return pd.DataFrame(self.parse(response))
     
+    def get_dummy(self, access_key: str = "", method: str = "", **kwargs) -> Dict:
+        """
+        Get a dummy response.
+        Useful for knowing the structure of the data returned by the API.
+        Args:
+            access_key (str): Your BioGRID access key.
+        Returns:
+            Dict: Dummy response with example fields.
+        """
+        if not access_key:
+            raise ValueError("Access key must be provided to get dummy data.")
+        if method != "" and method not in METHODS:
+            raise ValueError(f"Method {method} is not supported. Supported methods are: {', '.join(METHODS)}.")
+        dummy_results = {}
+        query = {
+            "accessKey": access_key,
+            "geneList": ["cdc27", "apc1", "apc2"],
+            "taxId": "559292",
+            'max': 1,
+            "format": "json"
+        }
+
+        if method:
+            dummy_results = super().get_dummy(
+                query=query,
+                method=method,
+                parse=True
+            )
+        else:
+            for method in METHODS:
+                dummy_results[method] = super().get_dummy(
+                    query=query,
+                    method=method,
+                    parse=True
+                )  
+        return dummy_results
+
+        
+    def query_usage(self):
+        """
+        Get usage information for the BioGRID API query parameters.
+        Returns:
+            str: Usage information.
+        """
+
+        usage = """Usage: To fetch interactions, use the BioGRID API with the following parameters.
+        Example:
+            - fetch_single(method="interactions", query={})
+        Available methods: """ + ", ".join(METHODS) + "\n\n"
+        usage += "Query Parameters:\n"
+        usage += "\n".join([f"\t{key}: {value[0]} ({value[1]}) - {value[2]}" for key, value in query_params_base.items() if value[0] is not None])
+        usage += "\n\nExample Query:\n"
+        usage += """
+        {
+            "accessKey": "YOUR_ACCESS_KEY",
+            "geneList": ["P53"],
+            "max": 10,
+            "format": "json"
+        }
+        """
+        usage += "\n\nResponse Format:\n"
+        usage += """
+        {
+            "BIOGRID_INTERACTION_ID": "int",
+            "ENTREZ_GENE_A": "str",
+            "ENTREZ_GENE_B": "str",
+            "BIOGRID_ID_A": "int",
+            "BIOGRID_ID_B": "int",
+            "SYSTEMATIC_NAME_A": "str",
+            "SYSTEMATIC_NAME_B": "str",
+            "OFFICIAL_SYMBOL_A": "str",
+            "OFFICIAL_SYMBOL_B": "str",
+            "SYNONYMS_A": "str",
+            "SYNONYMS_B": "str",
+            "EXPERIMENTAL_SYSTEM": "str",
+            "EXPERIMENTAL_SYSTEM_TYPE": "str",
+            "PUBMED_AUTHOR": "str",
+            "PUBMED_ID": "int",
+            "ORGANISM_A": "int",
+            "ORGANISM_B": "int",
+            "THROUGHPUT": "str",
+            "QUANTITATION": "str",
+            "MODIFICATION": "str",
+            "ONTOLOGY_TERMS": {},
+            "QUALIFICATIONS": "",
+            "TAGS": "",
+            "SOURCEDB": ""
+        }"""
+
+        return usage

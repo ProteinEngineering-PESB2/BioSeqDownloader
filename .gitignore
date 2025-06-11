@@ -19,4 +19,5 @@ src/.pdb_cache/
 *.pdb
 *.html
 *.log
+*.backup
 .env

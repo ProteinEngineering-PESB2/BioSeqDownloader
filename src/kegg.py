@@ -1,7 +1,8 @@
-import requests, time, random, re
+import requests, time, random, re, os
 from typing import Optional, Union, List, Dict, Any
 import pandas as pd
 
+from .base import BaseAPIInterface
 from .constants import KEGG
 from .utils import get_nested
 
@@ -29,12 +30,12 @@ METHOD_OPTIONS = {
     "link": ["turtle", "n-triple"]
 }
 
-class KEGGInterface:
+class KEGGInterface(BaseAPIInterface):
     def __init__(
             self,
-            min_wait: int = 1,
-            max_wait: int = 2,
             fields_to_extract: Optional[Union[List, Dict]] = None,
+            output_dir: Optional[str] = None,
+            **kwargs
             ):
         """
         Initialize the KEGGInterface class.
@@ -43,8 +44,10 @@ class KEGGInterface:
             max_wait (int): Maximum wait time between requests.
             fields_to_extract (list or dict): Fields to extract from the response.
         """
-        self.min_wait = min_wait
-        self.max_wait = max_wait
+        cache_dir = KEGG.CACHE_DIR if KEGG.CACHE_DIR is not None else ""
+        super().__init__(cache_dir=cache_dir, **kwargs)
+        self.output_dir = output_dir or cache_dir
+        os.makedirs(self.output_dir, exist_ok=True)
         self.fields_to_extract = fields_to_extract
 
     def fetch(

@@ -1,0 +1,58 @@
+getkmvalue:
+  ec: ecNumber
+  organism: organism
+  km: kmValue
+  km_max: kmValueMaximum
+  substrate: substrate
+getic50value:
+  ec: ecNumber
+  organism: organism
+  ic50: ic50Value
+  ic50_max: ic50ValueMaximum
+  inhibitor: inhibitor
+getkcatkmvallue:
+  ec: ecNumber
+  organism: organism
+  kcatkmv: kcatKmValue
+  kcatkmv_max: kcatKmValueMaximum
+  substrate: substrate
+getkivalue:
+  ec: ecNumber
+  organism: organism
+  ki: kiValue
+  ki_max: kiValueMaximum
+  inhibitor: inhibitor
+getphrange:
+  ec: ecNumber
+  organism: organism
+  ph_range: phRange
+  ph_range_max: phRangeMaximum
+getphoptimum:
+  ec: ecNumber
+  organism: organism
+  ph_optimum: phOptimum
+  ph_optimum_max: phOptimumMaximum
+getphstbaility:
+  ec: ecNumber
+  organism: organism
+  ph_stability: phStability
+  ph_stability_max: phStabilityMaximum
+gettemperaturrange:
+  ec: ecNumber
+  organism: organism
+  temperature_range: temperatureRange
+  temperature_range_max: temperatureRangeMaximum
+gettemperatureoptimum:
+  ec: ecNumber
+  organism: organism
+  temperature_optimum: temperatureOptimum
+  temperature_optimum_max: temperatureOptimumMaximum
+gettemperaturestability:
+  ec: ecNumber
+  organism: organism
+  temperature_stability: temperatureStability
+  temperature_stability_max: temperatureStabilityMaximum
+getcofactor:
+  ec: ecNumber
+  organism: organism
+  cofactor: cofactor

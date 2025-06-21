@@ -15,30 +15,40 @@ class AlphafoldInterface(BaseAPIInterface):
     def __init__(
             self,  
             structures: List[str] = ["pdb"],
-            fields_to_extract: Optional[Union[List, Dict]] = None,
-            output_dir: Optional[str] = "",
+            cache_dir: Optional[str] = None,
+            config_dir: Optional[str] = None,
+            output_dir: Optional[str] = None,
             **kwargs
         ):
         """
         Initialize the AlphafoldInterface.
         Args:
             structures (List[str]): List of structures extensions to download. Available options are ["pdb", "cif", "bcif"] or none.
-            self.fields_to_extract (List|Dict): Fields to keep from the original response.
-                - If List: Keep those keys.
-                - If Dict: Maps {desired_name: real_field_name}.
-            for more information, see: https://alphafold.ebi.ac.uk/#/public-api/get_predictions_api_prediction__qualifier__get
+            cache_dir (str): Directory to cache API responses. If None, defaults to the cache directory defined in constants.
+            config_dir (str): Directory for configuration files. If None, defaults to the config directory defined in constants.
             output_dir (str): Directory to save downloaded files. If None, defaults to the cache directory.
         """
-        cache_dir = ALPHAFOLD.CACHE_DIR if ALPHAFOLD.CACHE_DIR is not None else ""
-        super().__init__(cache_dir=cache_dir, **kwargs)
-        self.structures = structures
-        self.fields_to_extract = fields_to_extract
+        if cache_dir:
+            cache_dir = os.path.abspath(cache_dir)
+        else:
+            cache_dir = ALPHAFOLD.CACHE_DIR if ALPHAFOLD.CACHE_DIR is not None else ""
+
+        if config_dir is None:
+            config_dir = ALPHAFOLD.CONFIG_DIR if ALPHAFOLD.CONFIG_DIR is not None else ""
+
+        super().__init__(cache_dir=cache_dir, config_dir=config_dir, **kwargs)
         self.output_dir = output_dir or cache_dir
         os.makedirs(self.output_dir, exist_ok=True)
 
-    def fetch_single(self, query, parse: bool = False):
-        result = super().fetch_single(query, parse=parse)
+        self.structures = structures
 
+    def fetch_single(self, query: Union[str, dict], parse: bool = False, *args, **kwargs) -> Union[Dict, List]:
+        if not isinstance(query, str):
+            raise ValueError("Query must be a string representing a UniProt ID.")
+        
+        result = super().fetch_single(query, parse=parse, *args, **kwargs)
+
+        new_result = {}
         if self.structures:
             if isinstance(result, list):
                 for res in result:
@@ -48,24 +58,27 @@ class AlphafoldInterface(BaseAPIInterface):
 
         return result
     
-    def fetch_batch(self, queries: List[Union[str, tuple, dict]], parse: bool = False) -> List:
-        results = super().fetch_batch(queries, parse=parse)
+    def fetch_batch(self, queries: List[Union[str, dict]], parse: bool = False, *args, **kwargs) -> List[Dict]:
+        if not isinstance(queries, list) or not isinstance(queries[0], str):
+            raise ValueError("Queries must be a list of strings representing UniProt IDs.")
+        
+        results = super().fetch_batch(queries, parse=parse, *args, **kwargs)
 
+        new_results = []
         if self.structures:
             for result in results:
                 if isinstance(result, list):
                     for res in result:
-                        self.download_structures(res)
+                        new_results.append(self.download_structures(res))
                 elif isinstance(result, dict):
-                    self.download_structures(result)
+                    new_results = [self.download_structures(result)]
+        
+        if new_results:
+            return new_results
         return results
 
 
-    def fetch(
-            self, 
-            query: Union[str, tuple, dict],
-            **kwargs
-        ) -> Dict:
+    def fetch(self, query: Union[str, dict, list], **kwargs):
         """
         Get prediction for a given UniProt ID.
         Args:
@@ -87,25 +100,30 @@ class AlphafoldInterface(BaseAPIInterface):
             print(f"Error fetching prediction for {query}: {e}")
             return {}
 
-    def download_structures(self, parsed: Dict):
+    def download_structures(self, parsed: Dict) -> Dict:
         """
         Download structure files based on parsed prediction info.
 
         Args:
             parsed (Dict): Parsed data containing URLs for structures.
+        Returns:
+            Dict: Parsed data without the structure URLs.
         """
         if not self.structures:
-            return
+            return parsed if parsed is not None else {}
 
         for ext in self.structures:
             url_key = f"{ext}Url"
             if url_key not in parsed:
                 print(f"Warning: {url_key} not found in parsed data. {parsed}")
                 continue
-            
+
             structure_url = parsed[url_key]
             file_name = structure_url.split("/")[-1]
             file_path = os.path.join(self.output_dir, file_name)
+
+            # Delete the URL from parsed data
+            del parsed[url_key]
 
             # Check if the file already exists
             if os.path.exists(file_path):
@@ -115,48 +133,56 @@ class AlphafoldInterface(BaseAPIInterface):
                 response = self.session.get(structure_url)
                 with open(file_path, "wb") as f:
                     f.write(response.content)
+
             except Exception as e:
                 print(f"Error downloading structure {file_name}: {e}")
 
+        return parsed if parsed is not None else {}
+
     def parse(
             self, 
-            raw_data: Union[List, Dict],
+            data: Union[List, Dict],
+            fields_to_extract: Optional[Union[list, dict]],
             **kwargs
         ) -> Union[List, Dict]:
         """
         Parse data by extracting specified fields or returning the entire structure.
         Args:
             data (Union[List, Dict]): Data to parse.
+            fields_to_extract (List|Dict): Fields to keep from the original response.
+                - If List: Keep those keys.
+                - If Dict: Maps {desired_name: real_field_name}.
+            for more information, see: https://alphafold.ebi.ac.uk/#/public-api/get_predictions_api_prediction__qualifier__get
         Returns:
             Union[List, Dict]: Parsed data with specified fields or the entire structure.
         """
-        
         # Check input data type
-        if not isinstance(raw_data, (list, dict)):
+        if not isinstance(data, (List, Dict)):
             raise ValueError("Data must be a list or a dictionary.")
-
-        parsed = {}
-        if self.fields_to_extract is None:
-            parsed = get_nested(raw_data, "")
-
-        elif isinstance(self.fields_to_extract, list):
-            parsed = {key: get_nested(raw_data, key) for key in self.fields_to_extract}
-
-        elif isinstance(self.fields_to_extract, dict):
-            parsed = {new_key: get_nested(raw_data, path) for new_key, path in self.fields_to_extract.items()}
         
-        return parsed
+        # Check if structures are requested
+        if self.structures:
+            # Add new key in fields_to_extract for each structure type
+            for ext in self.structures:
+                if isinstance(fields_to_extract, List):
+                    fields_to_extract.append(f"{ext}Url")
+                elif isinstance(fields_to_extract, Dict):
+                    fields_to_extract[f"{ext}Url"] = f"{ext}Url"
+
+        return self._extract_fields(data, fields_to_extract)
     
-    def get_dummy(self) -> dict:
+    def get_dummy(self, **kwargs) -> dict:
         """
         Get a dummy response.
         Useful for knowing the structure of the data returned by the API.
         Returns:
             Dict: Dummy response with example fields.
         """
+        parse = kwargs.get("parse", False)
+
         return super().get_dummy(
             query="P02666",
-            parse=False
+            parse=parse
         )
     
     def query_usage(self):
@@ -167,7 +193,7 @@ class AlphafoldInterface(BaseAPIInterface):
         """
         usage = """Usage: To fetch predictions, use the UniProt ID as the query.
         Example: 
-            - fetch_single("P02666")
+            - fetch_single("P02666", parse=True)
             - fetch_batch(["P02666", "P12345"])
 
         Also you can download structures by setting the `structures` parameter in the constructor.

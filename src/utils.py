@@ -11,6 +11,10 @@ def extract_ec_numbers(ec_data: List) -> List[str]:
     """Extracts EC numbers"""
     return [ec['value'] for ec in ec_data] if isinstance(ec_data, list) else []
 
+def extract_gene_names(gene_names: List) -> List[str]:
+    """Extracts gene names"""
+    return [gene['geneName']['value'] for gene in gene_names] if isinstance(gene_names, list) else []
+
 def extract_database_terms(xrefs: List, database: str) -> List[str]:
     """Extracts database terms"""
     return [x['id'] for x in xrefs if isinstance(x, dict) and x.get('database') in database]
@@ -55,7 +59,7 @@ def camel_to_snake(name: str) -> str:
     return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
 
 
-def get_nested(data: Union[dict, list], path: str, sep: str = ".") -> Any:
+def get_nested(data: dict, path: str, sep: str = ".") -> Any:
     """
     Get a nested value from a dictionary or list given a specific path.
     Args:

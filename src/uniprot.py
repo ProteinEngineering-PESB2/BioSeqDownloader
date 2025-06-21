@@ -9,16 +9,17 @@ from io import StringIO
 
 from urllib.parse import urlparse, parse_qs, urlencode
 
-from utils import (
+from .utils import (
     extract_simple,
     extract_ec_numbers,
+    extract_gene_names,
     extract_database_terms,
     extract_references,
     extract_features,
     extract_keywords,
 )
 
-from constants import DATABASES
+from .constants import DATABASES
 
 API_URL = "https://rest.uniprot.org"
 POLLING_INTERVAL = 3 
@@ -178,24 +179,31 @@ class UniprotInterface(UniprotBase):
             }
         }
 
+        # Base field map for parsing UniProt results
+        # To add more possible fields, just add them to this map.
+        # Remember to add the extractor function if needed.
+        # The extractor function should take the data and return the desired value.
+        # See utils.py for available extractor functions.
         self.field_map_base = {
             'accession': ('primaryAccession', extract_simple),
             'protein_name': ('proteinDescription.recommendedName.fullName.value', extract_simple),
             'ec_numbers': ('proteinDescription.recommendedName.ecNumbers', extract_ec_numbers),
             'organism_name': ('organism.scientificName', extract_simple),
+            'gene_primary': ('genes', extract_gene_names),
             'taxon_id': ('organism.taxonId', extract_simple),
             'ineage': ('organism.lineage', extract_simple),
             'sequence': ('sequence.value', extract_simple),
             'length': ('sequence.length', extract_simple),
-            'go_terms': ('uniProtKBCrossReferences', extract_database_terms),
-            'pfam_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'alphafold_ids': ('uniProtKBCrossReferences', extract_database_terms),
-            'pdb_ids': ('uniProtKBCrossReferences', extract_database_terms),
-            'kegg_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'biogrid_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'brenda_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'go_terms': ('uniProtKBCrossReferences', extract_database_terms),
+            'interpro_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'kegg_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'pdb_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'pfam_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'reactome_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'refseq_ids': ('uniProtKBCrossReferences', extract_database_terms),
-            'interpro_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'string_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'references': ('references', extract_references),
             'features': ('features', extract_features),
@@ -206,7 +214,7 @@ class UniprotInterface(UniprotBase):
     def identify_id_type(self, id_str: str) -> str:
         """Identifica el tipo de ID basado en patrones regex"""
         if not isinstance(id_str, str):
-            return None
+            return ""
             
         for db_type, config in self.db_config.items():
             for pattern in config['patterns']:

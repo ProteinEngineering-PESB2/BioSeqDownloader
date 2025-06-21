@@ -9,33 +9,39 @@ from .constants import GENONTOLOGY
 from .utils import get_nested
 
 METHODS = {
-    "ontology-term": [""],
-    "go": [""]
+    "ontology-term": ["", "graph"],
+    "go": [""],
+    "bioentity-function": [""]
 }
 
 class GenOntologyInterface(BaseAPIInterface):
     def __init__(
             self,
-            fields_to_extract: Optional[Union[List, Dict]] = None,
+            cache_dir: Optional[str] = None,
+            config_dir: Optional[str] = None,
             output_dir: Optional[str] = None,
             **kwargs
     ):
         """
         Initialize the GenOntologyInterface class.
         Args:
-            fields_to_extract (list or dict): Fields to extract from the response.
+            cache_dir (str): Directory to cache results.
+            config_dir (str): Directory for configuration files.
+            output_dir (str): Directory to save output files.
         """
-        cache_dir = GENONTOLOGY.CACHE_DIR if GENONTOLOGY.CACHE_DIR is not None else ""
-        super().__init__(cache_dir=cache_dir, **kwargs)
+        if cache_dir:
+            cache_dir = os.path.abspath(cache_dir)
+        else:
+            cache_dir = GENONTOLOGY.CACHE_DIR if GENONTOLOGY.CACHE_DIR is not None else ""
+
+        if config_dir is None:
+            config_dir = GENONTOLOGY.CONFIG_DIR if GENONTOLOGY.CONFIG_DIR is not None else ""
+
+        super().__init__(cache_dir=cache_dir, config_dir=config_dir,**kwargs)
         self.output_dir = output_dir or cache_dir
         os.makedirs(self.output_dir, exist_ok=True)
-        self.fields_to_extract = fields_to_extract
 
-    def fetch(
-            self,
-            query: Union[str, tuple, dict],
-            **kwargs
-    ):
+    def fetch(self, query: Union[str, dict, list], **kwargs):
         """
         Fetch data from the GenOntology API.
         Args:
@@ -46,8 +52,11 @@ class GenOntologyInterface(BaseAPIInterface):
         Returns:
             any: response from the API.
         """
-        method = kwargs.get("method")  # Default method is 'ontology-term'
-        option = kwargs.get("option")
+        method = kwargs.get("method", "ontology-term")  # Default method is 'ontology-term'
+        option = kwargs.get("option", "")
+    
+        if not isinstance(query, str):
+            raise ValueError("Query must be a string representing the ontology term (e.g., 'GO:0008150').")
 
         if method and method not in METHODS.keys():
                 raise ValueError(f"Method {method} is not supported. Supported methods are: {', '.join(METHODS.keys())}.")
@@ -70,58 +79,78 @@ class GenOntologyInterface(BaseAPIInterface):
 
     def parse(
             self,
-            raw_data: Any,
+            data: Any,
+            fields_to_extract: Optional[Union[list, dict]],
             **kwargs
-    ) -> Dict:
+    ) -> Union[Dict, List]:
         """
         Parse the response from the GenOntology API.
         Args:
-            raw_data (Any): Raw data from the API response.
+            data (Any): Raw data from the API response.
+            fields_to_extract (List|Dict): Fields to keep from the original response.
+                - If List: Keep those keys.
+                - If Dict: Maps {desired_name: real_field_name}.
             **kwargs: Additional parameters for parsing.
             - `look_for_relationships`: If True, fetch related ontology terms.
         Returns:
             dict: Parsed response.
         """
         look_for_relationships = kwargs.get("look_for_relationships")
-        if not raw_data:
+        if not data:
             return {}
 
-        if isinstance(raw_data, requests.models.Response):
-            raw_data = raw_data.json()
-        elif isinstance(raw_data, dict):
-            raw_data = raw_data
+        if isinstance(data, requests.models.Response):
+            data = data.json()
+        elif isinstance(data, dict):
+            data = data
         else:
             raise ValueError("Response must be a requests.Response object or a dictionary.")
         
-        parsed = {}
+        parsed = self._extract_fields(data, fields_to_extract)
+        # parsed = {}
 
-        if self.fields_to_extract is None:
-            parsed = get_nested(raw_data, "")
+        # if fields_to_extract is None:
+        #     parsed = get_nested(data, "")
 
-        elif isinstance(self.fields_to_extract, list):
-            for key in self.fields_to_extract:
-                parsed[key] = get_nested(raw_data, key)
+        # elif isinstance(fields_to_extract, list):
+        #     for key in fields_to_extract:
+        #         parsed[key] = get_nested(data, key)
 
-        elif isinstance(self.fields_to_extract, dict):
-            for new_key, nested_path in self.fields_to_extract.items():
-                parsed[new_key] = get_nested(raw_data, nested_path)
-        else:
-            raise ValueError("fields_to_extract must be a list or a dictionary.")
+        # elif isinstance(fields_to_extract, dict):
+        #     for new_key, nested_path in fields_to_extract.items():
+        #         parsed[new_key] = get_nested(data, nested_path)
+        # else:
+        #     raise ValueError("fields_to_extract must be a list or a dictionary.")
 
         # Get related gen ontology terms if requested
         if look_for_relationships:
-            try:
-                rel_response = self.fetch(method="ontology-term", query=parsed.get("goid", ""), option="graph")
-                if isinstance(rel_response, requests.models.Response) and rel_response.status_code == 200:
-                    graph_json = rel_response.json()
-                    nodes = graph_json.get("topology_graph_json", {}).get("nodes", [])
-                    relationships = [node.get("id") for node in nodes if "id" in node]
-                    parsed["relationships"] = relationships
-                else:
-                    parsed["relationships"] = []
-            except Exception as e:
-                print(f"Error fetching relationships: {e}")
+            if isinstance(parsed, list):
+                parsed = [self.fetch_related_ontology_terms(item) for item in parsed]
+            else:
+                parsed =  self.fetch_related_ontology_terms(parsed)
 
+        return parsed
+
+    def fetch_related_ontology_terms(self, parsed: Dict) -> Dict:
+        """
+        Fetch related ontology terms for a given ontology term.
+        Args:
+            parsed (dict): Parsed ontology term data.
+        Returns:
+            dict: Updated parsed data with relationships.
+        """
+        try:
+            rel_response = self.fetch(method="ontology-term", query=parsed.get("goid", ""), option="graph")
+            if isinstance(rel_response, requests.models.Response) and rel_response.status_code == 200:
+                graph_json = rel_response.json()
+                nodes = graph_json.get("topology_graph_json", {}).get("nodes", [])
+                relationships = [node.get("id") for node in nodes if "id" in node]
+                parsed["relationships"] = relationships
+            else:
+                parsed["relationships"] = []
+        except Exception as e:
+            print(f"Error fetching relationships: {e}")
+        
         return parsed
     
     def get_dummy(self, *, method: Optional[str] = None, **kwargs) -> Dict:

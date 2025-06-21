@@ -25,26 +25,36 @@ db_types = {
     "set": ["cdd", "pfam", "pirsf"]
 }
 
+# TODO add modifiers definitions
+
 
 class InterproInstance(BaseAPIInterface):
     def __init__(
             self,
-            fields_to_extract: Optional[Union[list, dict]] = None,
+            cache_dir: Optional[str] = None,
+            config_dir: Optional[str] = None,
             output_dir: Optional[str] = None,
             **kwargs
     ):
         """
         Initialize the InterproInstance.
         Args:
-            fields_to_extract (list|dict): Fields to keep from the original response.
-                - If list: Keep those keys.
-                - If dict: Maps {desired_name: real_field_name}.
+            cache_dir (str): Directory to cache results.
+            config_dir (str): Directory for configuration files.
+            output_dir (str): Directory to save output files.
+            **kwargs: Additional keyword arguments.
         """
-        cache_dir = INTERPRO.CACHE_DIR if INTERPRO.CACHE_DIR is not None else ""
-        super().__init__(cache_dir=cache_dir, **kwargs)
+        if cache_dir:
+            cache_dir = os.path.abspath(cache_dir)
+        else:
+            cache_dir = INTERPRO.CACHE_DIR if INTERPRO.CACHE_DIR is not None else ""
+
+        if config_dir is None:
+            config_dir = INTERPRO.CONFIG_DIR if INTERPRO.CONFIG_DIR is not None else ""
+            
+        super().__init__(cache_dir=cache_dir, config_dir=config_dir, **kwargs)
         self.output_dir = output_dir or cache_dir
         os.makedirs(self.output_dir, exist_ok=True)
-        self.fields_to_extract = fields_to_extract
     
     def validate_query(self, method: str, query: Dict):
         """
@@ -56,19 +66,33 @@ class InterproInstance(BaseAPIInterface):
             ValueError: If the query parameters are invalid.
         """
         rules = {
+            'id': lambda v: isinstance(v, str) and v.strip() != "",
             'db': lambda v: v in db_types[method],
             'entry_integration': lambda v: v in entry_integration_types,
             'modifiers': lambda v: isinstance(v, dict),
-            'filters': lambda v: (
-                isinstance(v, dict)
-                and v.get('type') in filter_types
-                and v.get('type') != method
-            ),
+            # Example of a valid filters:
+                # "filters" : [
+                #     {
+                #         "type": "protein",
+                #         "db": "reviewed",
+                #         "value": "Q29537"
+                #     }
+                # ]
+            'filters': lambda filters: (
+                    isinstance(filters, list) and all(
+                        isinstance(f, dict)
+                        and all(k in f for k in ('type', 'db', 'value'))
+                        and f['type'] in filter_types and f['type'] != method
+                        for f in filters
+                    )
+                )
         }
 
         for key, check in rules.items():
             if key in query and not check(query[key]):
-                if key == 'filters':
+                if key == 'id':
+                    raise ValueError(f"Invalid ID: {query['id']}. It should be a non-empty string.")
+                elif key == 'filters':
                     valid = [ftype for ftype in filter_types if ftype != method]
                     raise ValueError(
                         f"Invalid filter type: {query[key].get('type')}. Valid types are: {valid}"
@@ -97,28 +121,43 @@ class InterproInstance(BaseAPIInterface):
         Returns:
             dict: The fetched data from the next page.
         """
+        responses = []
         try:
-            response = self.session.get(next_url)
+            response = self.session.get(next_url, headers={"Content-Type": "application/json"})
             self._delay()
-            response.raise_for_status()
-            next = None
-            if 'next' in response.json() and response.json()['next']:
-                next = self.fetch_pages(response.json()['next'], method, pages_to_fetch - 1) if pages_to_fetch > 1 else []
+            response.raise_for_status() 
             
-            response = response.json()['results']
-            response = [r['metadata'] for r in response if 'metadata' in r]
-            if next:
-                response.extend(next)
-            return response
+            if response.status_code == 204:
+                print(f"No content returned for URL {next_url}.")
+                return {}
+
+            data = response.json()
+
+            if not isinstance(data, dict) and "detail" in data.keys():
+                if data['detail'].startswith("There is no data associated with the requested URL"):
+                    return {}
+
+            if 'results' in data.keys() and isinstance(data['results'], list):
+                responses.extend(data['results'])
+            else:
+                responses.append(data)
+
+            next = None
+            if 'next' in data and data['next']:
+                next = self.fetch_pages(
+                    data['next'],
+                    method,
+                    pages_to_fetch - 1
+                ) if pages_to_fetch > 1 else None
+                if next:
+                    responses.extend(next)
+
+            return responses
         except requests.exceptions.RequestException as e:
             print(f"Error fetching next page for method {method}: {e}")
             return {}
 
-    def fetch(
-            self,
-            query: Union[str, tuple, dict],
-            **kwargs
-    ):
+    def fetch(self, query: Union[str, dict, list], **kwargs):
         """
         Fetch data from InterPro API.
         Args:
@@ -143,70 +182,54 @@ class InterproInstance(BaseAPIInterface):
         # Validate the query parameters
         self.validate_query(method, query)
 
-        filter_type = None
-        filter_db = None
-        filter_value = None
-
         # Construct the base URL
         url = f"{INTERPRO.API_URL}{method}/"
-
-        if 'filters' in query.keys():
-            filter_type = query['filters']['type']
-            filter_db = query['filters']['db']
-            filter_value = query['filters']['value']
-
-        if 'db' in query:
+           
+        if 'db' in query.keys() and query['db']:
             url += f"{query['db']}/"
-        if 'entry_integration' in query:
+        if 'id' in query.keys() and query['id']:
+            url += f"{query['id']}/"
+        if 'entry_integration' in query.keys() and query['entry_integration']:
             url += f"{query['entry_integration']}/"
-        if filter_type and filter_db and filter_value:
-            if filter_db in db_types[filter_type]:
-                url += f"{filter_type}/{filter_db}/{filter_value}/"
-            else:
-                raise ValueError(f"Invalid filter database type: {filter_db}. Valid types are: {db_types[filter_type]}")
-        if query['modifiers']:
+        if 'filters' in query.keys() and isinstance(query['filters'], list):
+            for f in query['filters']:
+                if f['type'] in filter_types and f['db'] in db_types[f['type']] and f['value']:
+                    url += f"{f['type']}/{f['db']}/{f['value']}/"
+                else:
+                    raise ValueError(f"Invalid filter: {f}. Valid filters are of type {filter_types} with databases {db_types[f['type']]}.")
+
+        if 'modifiers' in query.keys() and query['modifiers']:
             url += "?"
             for key, value in query['modifiers'].items():
                 if value is not None and value != "":
                     url += f"{key}={value}&"
             #remove the last '&'
             url = url[:-1]
+        
+        print(f"Fetching data from InterPro API with URL: {url}")
 
         return self.fetch_pages(url, method, pages_to_fetch)
 
-    def parse(self, raw_data: Any, **kwargs) -> Dict:
+    def parse(self, data: Any, fields_to_extract: Optional[Union[list, dict]], **kwargs) -> Union[Dict, List]:
         """
         Parse the fetched data.
         Args:
-            raw_data (dict): The fetched data.
+            data (dict): The fetched data.
+            fields_to_extract (List|Dict): Fields to keep from the original response.
+                - If List: Keep those keys.
+                - If Dict: Maps {desired_name: real_field_name}.
         Returns:
             dict: The parsed data.
         """
-        if not raw_data:
-            return {}
-        if isinstance(raw_data, dict):
-            raw_data = [raw_data]
+        if not isinstance(data, (List, Dict)):
+            raise ValueError("Data must be a list or a dictionary.")
+        if (isinstance(data, Dict) and not data) or \
+              (isinstance(data, List) and not data):
+            raise ValueError("Data is an empty structure.")
         
-        parsed_list = []
-
-        for data in raw_data:
-            parsed = {}
-            # Determine which fields to include 
-            if self.fields_to_extract is None:
-                parsed = get_nested(data, "")
-                
-            elif isinstance(self.fields_to_extract, list):
-                for key in self.fields_to_extract:
-                    parsed[key] = get_nested(data, key)
-
-            elif isinstance(self.fields_to_extract, dict):
-                for new_key, nested_path in self.fields_to_extract.items():
-                    parsed[new_key] = get_nested(data, nested_path)
-            
-            parsed_list.append(parsed)
-
-        return parsed_list
+        return self._extract_fields(data, fields_to_extract)
     
+
     def get_dummy(self, *, method: Optional[str] = None, **kwargs) -> Dict:
         """
         Return a dummy response for testing purposes.

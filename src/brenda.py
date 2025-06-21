@@ -56,7 +56,7 @@ class BrendaInstance(BaseAPIInterface):
                 for operation_name in port.binding._operations.keys():
                     print(f"- {operation_name}")
     
-    def fetch(self, query: Union[str, tuple, dict], **kwargs) -> list:
+    def fetch(self, query: Union[str, dict, list], **kwargs):
         """
         Fetch data from BRENDA for a given EC number and organism.
         Args:

@@ -1,0 +1,6 @@
+entry: entryId
+gene: gene
+tax_id: taxId
+organism: organismScientificName
+is_reviewed: isReviewed
+is_reference: isReferenceProteome

@@ -11,15 +11,24 @@ from .utils import get_nested
 # Rest documentation: https://wiki.thebiogrid.org/doku.php/biogridrest
 
 METHODS = [
-    "interactions",
-    "organisms",
-    "identifiers",
-    "evidence"
+    "interactions"
 ]
 
 # TODO add more from docs
+# TODO ISSUES:
+# For some reason, running this query:
+# query={
+#     "accessKey": biogrid_api_key,
+#     "geneList": ['1148170', '1148186', '112090'],
+#     "searchBiogridIds" : True,
+#     "format": "tab2"
+# },
+# gives an error:
+# Error fetching data for {...}: Extra data: line 1 column 8 (char 7). Tried URL: https://webservice.thebiogrid.org/interactions?accessKey={ACCESS_KEY}&geneList=1148170|1148186|112090&searchBiogridIds=True&format=tab2
+# This error will go to a low priority issue, as it is not as used as the JSON format.
 query_params_base = {
     "accessKey": (None, "string", "Your BioGRID access key"),
+    "id": (None, "string", "BioGRID interaction ID to filter results"),
     "start": (0, "integer", "Start index for pagination"),
     "max": (10000, "integer", "Maximum number of results to return"),
     "interSpeciesExclude": (False, "boolean", "Include interactions between different species"),
@@ -27,47 +36,51 @@ query_params_base = {
     "evidenceList" : (None, "string", "Comma-separated list of evidence codes to filter results"),
     "includeEvidence" : (False, "boolean", "If ‘true’, evidence codes will be included in the results"),
     "geneList" : (None, "string", "List of gene names to filter results."),
+    "searchBiogridIds" : (False, "boolean", "If ‘true’, the interactor BIOGRID_ID will be examined for a match with the geneList."),
     "taxId" : (None, "string", "Taxonomy ID of the organism to filter results. If not provided, all organisms will be included."),
     "searchIds" : (False, "boolean", "If ‘true’, the interactor ENTREZ_GENE, ORDERED LOCUS and SYSTEMATIC_NAME (orf) will be examined for a match with the geneList."),
-    "format" : ("tab2", "string", "Format of the response. Options are 'tab1','tab2', 'extendedTab2', 'count', 'json', 'jsonExtended'. Default is 'tab2'."),
+    "format" : ("json", "string", "Format of the response. Options are 'tab1','tab2', 'extendedTab2', 'count', 'json', 'jsonExtended'. Default is 'json'."),
 }
 
 
 class BioGRIDInterface(BaseAPIInterface):
     def __init__(
             self,
-            fields_to_extract: Optional[Union[List, Dict]] = None,
+            cache_dir: Optional[str] = None,
+            config_dir: Optional[str] = None,
             output_dir: Optional[str] = None,
             **kwargs
     ):
         """
         Initialize the BioGRIDInterface class.
         Args:
-            fields_to_extract (list or dict): Fields to extract from the response.
+            cache_dir (str): Directory to cache results.
+            config_dir (str): Directory for configuration files.
+            output_dir (str): Directory to save output files.
         """
-        
-        cache_dir = BIOGRID.CACHE_DIR if BIOGRID.CACHE_DIR is not None else ""
-        super().__init__(cache_dir=cache_dir, **kwargs)
-        self.fields_to_extract = fields_to_extract
+        if cache_dir:
+            cache_dir = os.path.abspath(cache_dir)
+        else:
+            cache_dir = BIOGRID.CACHE_DIR if BIOGRID.CACHE_DIR is not None else ""
+
+        if config_dir is None:
+            config_dir = BIOGRID.CONFIG_DIR if BIOGRID.CONFIG_DIR is not None else ""
+
+        super().__init__(cache_dir=cache_dir, config_dir=config_dir, **kwargs)
         self.output_dir = output_dir or cache_dir
         os.makedirs(self.output_dir, exist_ok=True)
     
-    def fetch(
-            self,
-            query: Union[str, tuple, dict],
-            **kwargs
-    ):
+    def fetch(self, query: Union[str, dict, list], **kwargs):
         """
         Fetch data from the BioGRID API.
         Args:
             query (str): Query string to search for.
             **kwargs: Additional parameters for the request.
-            - `method`: Method to use for the request. Used methods are
-            'interactions', 'organisms', 'identifiers', 'evidence'.
+            - `method`: Method to use for the request. Default is "interactions".
         Returns:
             any: response from the API.
         """
-        method = kwargs.get("method")
+        method = kwargs.get("method", "interactions")
 
         if method not in METHODS:
             raise ValueError(f"Method {method} is not supported. Supported methods are: {', '.join(METHODS)}.")
@@ -78,9 +91,15 @@ class BioGRIDInterface(BaseAPIInterface):
             if key not in query_params_base:
                 raise ValueError(f"Query parameter {key} is not supported. Supported parameters are: {', '.join(query_params_base.keys())}.")
 
-        
         # Generate url
-        url = f"{BIOGRID.API_URL}{method}?"
+        url = f"{BIOGRID.API_URL}{method}"
+
+        if "id" in query.keys():
+            if isinstance(query["id"], str):
+                url += f"/{query["id"]}"
+            query.pop("id")  # Remove id from query to avoid duplication in URL
+        
+        url += "?"
 
         for key, value in query.items():
             if isinstance(value, List):
@@ -90,7 +109,8 @@ class BioGRIDInterface(BaseAPIInterface):
 
             url += "&"
 
-        url = url.rstrip("&")
+        if "format" not in query.keys():
+            url += "format=json"
         
         try:
             response = self.session.get(url)
@@ -98,51 +118,42 @@ class BioGRIDInterface(BaseAPIInterface):
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Error fetching prediction for {query}: {e}")
+            print(f"Error fetching data for {query}: {e}. Tried URL: {url}")
             return {}
 
     def parse(
             self,
-            raw_data: Any,
+            data: Any,
+            fields_to_extract: Optional[Union[list, dict]],
             **kwargs
-    ):
+    ) -> Union[Dict, List]:
         """
         Parse the response from the BioGRID API.
         Args:
-            response (requests.Response): Response object from the API.
+            data (dict): The fetched data.
+            fields_to_extract (List|Dict): Fields to keep from the original response.
+                - If List: Keep those keys.
+                - If Dict: Maps {desired_name: real_field_name}.
         Returns:
             any: Parsed data from the response.
         """
-        if not raw_data:
+        if not data:
             return {}
 
-        if isinstance(raw_data, requests.models.Response):
-            raw_data = raw_data.json()
-        elif isinstance(raw_data, dict):
-            raw_data = raw_data
+        if isinstance(data, requests.models.Response):
+            data = data.json()
+        elif isinstance(data, dict):
+            data = data
         else:
             raise ValueError("Response must be a requests.Response object or a dictionary.")
         
-        parsed_list = []
+        # Check if all keys are numbers (indicating a list of interactions)
+        if isinstance(data, dict) and all(key.isdigit() for key in data.keys()):
+            # Convert to list of interactions
+            data = list(data.values())
 
-        for _, value in raw_data.items():
-            parsed = {}
-            if self.fields_to_extract is None:
-                parsed = get_nested(value, "")
+        return self._extract_fields(data, fields_to_extract)
 
-            elif isinstance(self.fields_to_extract, list):
-                for key in self.fields_to_extract:
-                    parsed[key] = get_nested(value, key)
-
-            elif isinstance(self.fields_to_extract, dict):
-                for new_key, nested_path in self.fields_to_extract.items():
-                    parsed[new_key] = get_nested(value, nested_path)
-            else:
-                raise ValueError("fields_to_extract must be a list or a dictionary.")
-            
-            parsed_list.append(parsed)
-        
-        return parsed_list
     
     def get_dummy(self, access_key: str = "", method: str = "", **kwargs) -> Dict:
         """
@@ -153,6 +164,8 @@ class BioGRIDInterface(BaseAPIInterface):
         Returns:
             Dict: Dummy response with example fields.
         """
+        parse = kwargs.get("parse", False)
+
         if not access_key:
             raise ValueError("Access key must be provided to get dummy data.")
         if method != "" and method not in METHODS:
@@ -170,15 +183,15 @@ class BioGRIDInterface(BaseAPIInterface):
             dummy_results = super().get_dummy(
                 query=query,
                 method=method,
-                parse=True
+                parse=parse
             )
         else:
             for method in METHODS:
                 dummy_results[method] = super().get_dummy(
                     query=query,
                     method=method,
-                    parse=True
-                )  
+                    parse=parse
+                )
         return dummy_results
 
         

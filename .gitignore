@@ -11,6 +11,7 @@ tmp/
 results/
 src/.alphafold_cache/
 src/.pdb_cache/
+.vscode/
 
 
 *.json

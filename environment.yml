@@ -11,3 +11,5 @@ dependencies:
     - rcsb-api
     - biopython
     - zeep
+    - dotenv
+    - pyyaml

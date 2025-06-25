@@ -70,7 +70,7 @@ class BioGRIDInterface(BaseAPIInterface):
         self.output_dir = output_dir or cache_dir
         os.makedirs(self.output_dir, exist_ok=True)
     
-    def fetch(self, query: Union[str, dict, list], **kwargs):
+    def fetch(self, query: Union[str, dict, list], *, method: str = "interactions", **kwargs):
         """
         Fetch data from the BioGRID API.
         Args:
@@ -80,7 +80,7 @@ class BioGRIDInterface(BaseAPIInterface):
         Returns:
             any: response from the API.
         """
-        method = kwargs.get("method", "interactions")
+        #method = kwargs.get("method", "interactions")
 
         if method not in METHODS:
             raise ValueError(f"Method {method} is not supported. Supported methods are: {', '.join(METHODS)}.")
@@ -118,7 +118,12 @@ class BioGRIDInterface(BaseAPIInterface):
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Error fetching data for {query}: {e}. Tried URL: {url}")
+            # If message has 400 Client Error: Bad Request for url probably didn't found a given taxId or geneList
+            if response.status_code == 400:
+                error_message = response.json().get("message", "Unknown error")
+                print(f"Gene or Taxonomy ID not found for {query}.")
+            else:
+                print(f"Error fetching data for {query}: {e}. Tried URL: {url}")
             return {}
 
     def parse(

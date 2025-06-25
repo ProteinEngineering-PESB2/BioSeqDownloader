@@ -29,7 +29,7 @@ class DBConfig:
     CONFIG_DIR: Optional[str] = None
 
 ALPHAFOLD = DBConfig(
-    API_URL="https://alphafold.ebi.ac.uk/api/prediction/",
+    API_URL="https://alphafold.ebi.ac.uk/api/",
     CACHE_DIR=os.path.join(BASE_CACHE_DIR, "alphafold"),
     CONFIG_DIR=os.path.join(BASE_CONFIG_DIR, "alphafold")
 )

@@ -2,7 +2,7 @@ import os
 import requests
 from typing import Optional, Union, List, Dict, Any
 
-
+import pandas as pd
 
 from .base import BaseAPIInterface
 
@@ -52,15 +52,16 @@ class PDBInterface(BaseAPIInterface):
         self.return_data_list = return_data_list if return_data_list else ["rcsb_entry_info"]
         
        
-    def fetch(self, query: Union[str, dict, list], **kwargs):
+    def fetch(self, query: Union[str, dict, list], *, method: str = "entry",**kwargs):
         """
         Run a query to fetch data from the PDB database.
         Args:
             query (str): PDB ID to fetch data for.
+            method (str): API method to use. Default is "entry".
         Returns:
             dict: Fetched data for the given PDB ID.
         """
-        url = f"{PDB.API_URL}entry/{query}"
+        url = f"{PDB.API_URL}{method}/{query}"
         
         try:
             response = self.session.get(url)
@@ -103,14 +104,14 @@ class PDBInterface(BaseAPIInterface):
             print(f"Error downloading structure for {pdb_id}: {e}")
             return ""
         
-    def fetch_single(self, query: str | tuple | Dict, parse: bool = False):
+    def fetch_single(self, query: Union[str, dict, list[str]], parse: bool = False, *args, **kwargs) -> Union[List, Dict, pd.DataFrame]:
 
         if self.download_structures and query and isinstance(query, str):
             self.fetch_structure(query)
-        return super().fetch_single(query, parse)
+        return super().fetch_single(query, parse, *args, **kwargs)
     
-    def fetch_batch(self, queries: List[Union[str, tuple, dict]], parse: bool = False) -> List:
-        results = super().fetch_batch(queries, parse)
+    def fetch_batch(self, queries: List[Union[str, dict]], parse: bool = False, *args, **kwargs) -> Union[List, pd.DataFrame]:
+        results = super().fetch_batch(queries, parse, *args, **kwargs)
         if self.download_structures:
             for query in queries:
                 if isinstance(query, str):

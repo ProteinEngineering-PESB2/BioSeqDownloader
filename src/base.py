@@ -1,4 +1,5 @@
 import time, random, os, hashlib, json
+import inspect
 import requests
 import yaml
 from typing import Any
@@ -7,6 +8,7 @@ import pandas as pd
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from typing import Union, List, Dict, Optional
+from itertools import permutations
 
 from .utils import get_feature_keys, get_nested
 
@@ -46,6 +48,7 @@ class BaseAPIInterface(ABC):
         self.use_config = use_config
 
         self.configs: Dict[str, dict] = {}
+        self.fields_config: Dict[str, dict] = {}
 
         if self.use_config and self.config_dir:
             self._load_all_configs(self.config_dir)
@@ -63,12 +66,6 @@ class BaseAPIInterface(ABC):
         self.session.mount('https://', adapter)
         self.session.mount('http://', adapter)
         self.session.headers.update(self.headers or {"Content-Type": "application/json"})
-
-    def get_config(self, key: str) -> dict:
-        """
-        Return the configuration dictionary for a given key (config filename without extension).
-        """
-        return self.configs.get(key, {})
 
     def _load_all_configs(self, config_dir: str) -> None:
         """
@@ -157,27 +154,89 @@ class BaseAPIInterface(ABC):
         else:
             with open(path, 'w') as f:
                 json.dump(data, f)
-
-    def _maybe_parse(self, data, parse: bool, **kwargs) -> Union[List, Dict]:
-        if not parse:
-            return data
-        config_key = kwargs.pop("config_key", "default")
-        fields_to_extract = kwargs.pop("fields_to_extract", None)
-
-        if not fields_to_extract and self.use_config and config_key:
-                fields_to_extract = self.get_config(config_key) or None
-
-        #print(f"Parsing data with fields: {fields_to_extract}")
-        if isinstance(data, list):
-            return [self.parse(data=d, fields_to_extract=fields_to_extract, **kwargs) for d in data]
-        elif isinstance(data, dict):
-            return self.parse(data=data, fields_to_extract=fields_to_extract, **kwargs)
-        elif isinstance(data, str):
-            # This is the case of KEGG API, which returns a string, parse method should handle it
-            return self.parse(data=data, fields_to_extract=fields_to_extract, **kwargs)
-        return data
     
-    def fetch_single(self, query: Union[str, dict, list[str]], parse: bool = False, *args, **kwargs) -> Union[List, Dict]:
+    def get_config(self, key: str) -> dict:
+        """
+        Return the configuration dictionary for a given key (config filename without extension).
+        """
+        return self.configs.get(key, {})
+
+    def _resolve_fields_from_kwargs(self, include_defaults_from=None, **kwargs) -> Optional[Dict]:
+        """
+        Resolve fields_to_extract by matching kwargs against keys in fields.yml.
+
+        Automatically checks if any value in kwargs or combination like f"{value}_{mode}" matches a known config key.
+        """
+        fields_config = self.get_config("fields") if self.use_config else {}
+        known_keys = set(fields_config.keys())
+
+        values = [str(v) for v in kwargs.values() if isinstance(v, str)]
+
+        #print(f"Values from kwargs: {values}")
+
+        if include_defaults_from is not None:
+            sig = inspect.signature(include_defaults_from)
+            for name, param in sig.parameters.items():
+                if param.default is not inspect.Parameter.empty and name not in kwargs:
+                    default_val = param.default
+                    if isinstance(default_val, str):
+                        values.append(default_val)
+
+        # 1. Check if any value in kwargs matches a known key
+        for v in values:
+            #print(f"Trying to resolve fields from kwargs: {v}")
+            #print(f"Known keys: {known_keys}")
+            if v in known_keys:
+                return fields_config[v]
+    
+        # 2. Check combinations of values in kwargs
+        for v1, v2 in permutations(values, 2):
+            composite = f"{v1}_{v2}"
+            if composite in known_keys:
+                return fields_config[composite]
+        
+        return None
+
+    def _maybe_parse(self, data, parse: bool, to_dataframe: bool = False, **kwargs) -> Union[List, Dict]:
+        if not parse:
+            result = data
+        else:
+            config_key = kwargs.pop("config_key", None)
+            fields_to_extract = kwargs.pop("fields_to_extract", None)
+
+            #if not fields_to_extract and self.use_config and config_key:
+            #        fields_to_extract = self.get_config(config_key) or None
+            if not fields_to_extract and self.use_config:
+                # 1. Try to resolve fields from kwargs
+                fields_to_extract = self._resolve_fields_from_kwargs(include_defaults_from=self.fetch, **kwargs)
+
+                # 2. If not found, try to get from config
+                if not fields_to_extract and config_key:
+                    fields_to_extract = self.get_config(config_key) or None
+
+            if isinstance(data, list):
+                result = [self.parse(data=d, fields_to_extract=fields_to_extract, **kwargs) for d in data]
+            elif isinstance(data, dict):
+                result =  self.parse(data=data, fields_to_extract=fields_to_extract, **kwargs)
+            elif isinstance(data, str):
+                # This is the case of KEGG API, which returns a string, parse method should handle it
+                result = self.parse(data=data, fields_to_extract=fields_to_extract, **kwargs)
+            else:
+                raise ValueError("Data must be a list, dictionary, or string for parsing.")
+
+        # Convert to DataFrame if requested
+        if to_dataframe:
+            # TODO: Make sure parse method returns a consistent structure
+            if isinstance(result, list):
+                return pd.DataFrame(result)
+            elif isinstance(result, dict):
+                return pd.DataFrame([result])
+            else:
+                raise ValueError("Cannot convert to DataFrame: unsupported type")
+
+        return result
+    
+    def fetch_single(self, query: Union[str, dict, list[str]], parse: bool = False, *args, **kwargs) -> Union[List, Dict, pd.DataFrame]:
         """
         General-purpose fetch method with optional parsing and cache handling.
 
@@ -188,6 +247,7 @@ class BaseAPIInterface(ABC):
         kwargs:
             config_key (str): Key to use for configuration settings.
             fields_to_extract (Optional[Union[list, dict]]): Fields to extract from the fetched data.
+            to_dataframe (bool): Whether to convert the result to a DataFrame.
         Returns:
             Any: Fetched data, parsed if requested.
         """
@@ -211,7 +271,7 @@ class BaseAPIInterface(ABC):
 
         return result if result is not None else {}
     
-    def fetch_batch(self, queries: List[Union[str, dict]], parse: bool = False, *args, **kwargs) -> List[Dict]:
+    def fetch_batch(self, queries: List[Union[str, dict]], parse: bool = False, *args, **kwargs) -> Union[List, pd.DataFrame]:
         """
         Fetch data in parallel for a batch of queries.
         Args:
@@ -221,6 +281,7 @@ class BaseAPIInterface(ABC):
         kwargs:
             config_key (str): Key to use for configuration settings.
             fields_to_extract (Optional[Union[list, dict]]): Fields to extract from the fetched data.
+            to_dataframe (bool): Whether to convert the result to a DataFrame.
         Returns:
             List: List of fetched data, parsed if requested.
         """
@@ -262,6 +323,11 @@ class BaseAPIInterface(ABC):
         #         flattened_results.append(result)
         #     elif isinstance(result, list):
         #         flattened_results.extend(r for r in result if isinstance(r, dict))
+        
+        # Patch solution. Make sure that it works as intended
+        # If it's a list of dataframes, concatenate them
+        if all(isinstance(r, pd.DataFrame) for r in results) and len(results) > 0:
+            return pd.concat(results, ignore_index=True)
         
         return results
     
@@ -327,7 +393,7 @@ class BaseAPIInterface(ABC):
         raise NotImplementedError
     
     @abstractmethod
-    def fetch(self, query: Union[str, dict, list], **kwargs):
+    def fetch(self, query: Union[str, dict, list], *, method: str, **kwargs):
         raise NotImplementedError
     
     @abstractmethod

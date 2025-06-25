@@ -14,11 +14,11 @@ go:
   synonyms: synonyms
   related_synonyms: relatedSynonyms
 
-  bioentity-function:
-    label: bioentity_label
-    name: bioentity_name
-    tax_id: taxon
-    organism: taxon_label
-    evidence_type: evidence_type
-    evidence: evidence
-    synonym: synonym
+bioentity-function:
+  label: bioentity_label
+  name: bioentity_name
+  tax_id: taxon
+  organism: taxon_label
+  evidence_type: evidence_type
+  evidence: evidence
+  synonym: synonym

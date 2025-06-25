@@ -1,6 +1,0 @@
-rcsb_id: rcsb_id
-model_provenance: rcsb_comp_model_provenance
-branched_molecular_weight_minimum: rcsb_entry_info.branched_molecular_weight_minimum
-resolution_combined: rcsb_entry_info.resolution_combined
-experimental_method: rcsb_entry_info.experimental_method
-diffrn_resolution_high: rcsb_entry_info.diffrn_resolution_high.value

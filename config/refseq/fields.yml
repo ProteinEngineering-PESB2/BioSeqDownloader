@@ -1,0 +1,6 @@
+protein:
+  locus: GBSeq_locus
+  project_id: GBSeq_project
+popset:
+  project_id: GBSeq_project
+  features: GBSeq_feature-table

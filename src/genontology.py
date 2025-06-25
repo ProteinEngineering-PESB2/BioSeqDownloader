@@ -41,14 +41,14 @@ class GenOntologyInterface(BaseAPIInterface):
         self.output_dir = output_dir or cache_dir
         os.makedirs(self.output_dir, exist_ok=True)
 
-    def fetch(self, query: Union[str, dict, list], **kwargs):
+    def fetch(self, query: Union[str, dict, list], *, method: str = "ontology-term", **kwargs):
         """
         Fetch data from the GenOntology API.
         Args:
             query (str): Query string to search for.
+            method (str): Method to use for the request. Used methods are 'ontology-term' and 'go'.
             **kwargs: Additional parameters for the request.
-            - `method`: Method to use for the request. Used methods are 'ontology-term' and 'go'.
-            - `option`: Additional options for the request. (currently not used)  
+            - `option`: Additional options for the request. 
         Returns:
             any: response from the API.
         """
@@ -58,7 +58,7 @@ class GenOntologyInterface(BaseAPIInterface):
         if not isinstance(query, str):
             raise ValueError("Query must be a string representing the ontology term (e.g., 'GO:0008150').")
 
-        if method and method not in METHODS.keys():
+        if method not in METHODS.keys():
                 raise ValueError(f"Method {method} is not supported. Supported methods are: {', '.join(METHODS.keys())}.")
         if option and option not in METHODS.get(method, []):
             raise ValueError(f"Option {option} is not supported for method {method}. Supported options are: {', '.join(METHODS.get(method, []))}.")

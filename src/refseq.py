@@ -60,23 +60,22 @@ class RefSeqInterface(BaseAPIInterface):
         else:
             return obj
 
-    def fetch(self, query: Union[str, dict, list], **kwargs):
+    def fetch(self, query: Union[str, dict, list], *, method: str = "protein",**kwargs):
         """
         Fetch data from NCBI Entrez for a given ID.
         Args:
             id (str): ID to fetch data for.
-            db (str): Database to query (default: "protein").
+            method (str): Database to query (default: "protein").
             retmode (str): Return mode (default: "xml").
         Returns:
             list: Fetched data.
         """
-        db = kwargs.get('db', 'protein')
         retmode = kwargs.get('retmode', 'xml')
 
-        if db not in databases:
-            raise ValueError(f"Database '{db}' is not supported. Supported databases: {', '.join(databases)}")
+        if method not in databases:
+            raise ValueError(f"Database '{method}' is not supported. Supported databases: {', '.join(databases)}")
 
-        handle = Entrez.efetch(db=db, id=query, retmode=retmode)
+        handle = Entrez.efetch(db=method, id=query, retmode=retmode)
         records = Entrez.read(handle)
         handle.close()
 

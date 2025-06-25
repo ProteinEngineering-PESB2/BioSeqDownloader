@@ -157,25 +157,20 @@ class InterproInstance(BaseAPIInterface):
             print(f"Error fetching next page for method {method}: {e}")
             return {}
 
-    def fetch(self, query: Union[str, dict, list], **kwargs):
+    def fetch(self, query: Union[str, dict, list], *, method: str = "entry", **kwargs):
         """
         Fetch data from InterPro API.
         Args:
-            interpro_id (str): The InterPro ID to fetch.
-            db (str): Database type.
-            entry_integration (str): Entry integration type.
-            modifiers (dict): Modifiers for the request.
-            query (dict): Query parameters for the request.
+            query (str|dict|list): The query parameters to fetch data.
+            method (str): The method to use for the request.
         Returns:
             dict: The fetched data.
         """
-        method = kwargs.get("method", None)
         pages_to_fetch = kwargs.get("pages_to_fetch", 1)
   
-        if not method:
-            raise ValueError("Method must be specified in the query parameters.")
+        if method not in data_types:
+            raise ValueError("Method must be one of the following: " + ", ".join(data_types))
         
-
         if not isinstance(query, dict):
             raise ValueError("Query must be a dictionary containing 'db', 'entry_integration', 'modifiers', 'filter_type', 'filter_db', and 'filter_value' keys.")
 

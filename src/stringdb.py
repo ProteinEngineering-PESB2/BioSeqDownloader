@@ -61,7 +61,7 @@ class StringInterface(BaseAPIInterface):
         self.output_dir = output_dir or cache_dir
         os.makedirs(self.output_dir, exist_ok=True)
 
-    def fetch(self, query: Union[str, dict, list], **kwargs):
+    def fetch(self, query: Union[str, dict, list], *, method: str = "get_string_ids", **kwargs):
         """
         Fetch data from the STRING API.
         Args:
@@ -71,7 +71,6 @@ class StringInterface(BaseAPIInterface):
         Returns:
             dict: Parsed response from the API.
         """
-        method = kwargs.get("method", "get_string_ids")
         outfmt = kwargs.get("outfmt", "json")
 
         if method not in METHODS:

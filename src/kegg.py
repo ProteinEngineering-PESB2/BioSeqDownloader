@@ -85,14 +85,14 @@ class KEGGInterface(BaseAPIInterface):
                 elif key == 'option':
                     raise ValueError(f"Invalid option: {query['option']} for method {method}. Supported options are: {', '.join(METHOD_OPTIONS.get(method, []))}.")
     
-    def fetch(self, query: Union[str, dict, list], **kwargs):
+    def fetch(self, query: Union[str, dict, list], *, method: str = "get", **kwargs):
         """
         Fetch data from the KEGG API.
         Args:
             query (str): Query string to search for.
-            **kwargs: Additional parameters for the request.
-            - `method`: Method to use for the request. Used methods are
+            method (str): Method to use for the request. Used methods are
                 'info', 'list', 'find', 'get', 'conv', 'link', 'ddi'.
+            **kwargs: Additional parameters for the request.
             - `database`: Database to use for the request. Used databases are
                 'pathway', 'brite', 'module', 'genome', 'compound',
                 'glycan', 'reaction', 'enzyme', 'network', 'disease',
@@ -105,7 +105,6 @@ class KEGGInterface(BaseAPIInterface):
         Returns:
             any: Response from the API.
         """
-        method = kwargs.get("method", "get")  # Default method is 'get'
 
         if not method:
             raise ValueError("Method must be specified. Supported methods are: " + ", ".join(METHODS))

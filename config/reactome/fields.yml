@@ -1,0 +1,7 @@
+data/pathways/low/diagram/entity:
+  id: stId
+  display_name: displayName
+  class_name: className
+
+data/discover:
+  name: name

@@ -66,18 +66,17 @@ class ReactomeInstance(BaseAPIInterface):
                 elif key == 'onlyDiagrammed':
                     raise ValueError(f"Invalid onlyDiagrammed: {query['onlyDiagrammed']}. It should be a boolean value.")
 
-    def fetch(self, query: Union[str, dict, list], **kwargs):
+    def fetch(self, query: Union[str, dict, list], *, method: str = "data", **kwargs):
         """
         Download pathways from a given Reactome pathway ID.
         Args:
             pathway_id (str): Reactome pathway ID.
-        kwargs:
             method (str): Method to use for fetching data (e.g., 'discover', 'complex', etc.).
+        kwargs:
             option (str): Additional options for the method.
         Returns:
             dict: Pathway data.
         """
-        method = kwargs.get("method", None)
         option = kwargs.get("option", "")
   
         if not method:

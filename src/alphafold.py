@@ -8,7 +8,6 @@ from .base import BaseAPIInterface
 from .constants import ALPHAFOLD
 from .utils import get_nested
 
-# TODO Incluir un outputfmt
 # TODO Test get_dummy
 
 class AlphafoldInterface(BaseAPIInterface):
@@ -42,7 +41,7 @@ class AlphafoldInterface(BaseAPIInterface):
 
         self.structures = structures
 
-    def fetch_single(self, query: Union[str, dict], parse: bool = False, *args, **kwargs) -> Union[Dict, List]:
+    def fetch_single(self, query: Union[str, dict], parse: bool = False, *args, **kwargs) -> Union[List, Dict, pd.DataFrame]:
         if not isinstance(query, str):
             raise ValueError("Query must be a string representing a UniProt ID.")
         
@@ -58,7 +57,7 @@ class AlphafoldInterface(BaseAPIInterface):
 
         return result
     
-    def fetch_batch(self, queries: List[Union[str, dict]], parse: bool = False, *args, **kwargs) -> List[Dict]:
+    def fetch_batch(self, queries: List[Union[str, dict]], parse: bool = False, *args, **kwargs) -> Union[List, pd.DataFrame]:
         if not isinstance(queries, list) or not isinstance(queries[0], str):
             raise ValueError("Queries must be a list of strings representing UniProt IDs.")
         
@@ -78,18 +77,22 @@ class AlphafoldInterface(BaseAPIInterface):
         return results
 
 
-    def fetch(self, query: Union[str, dict, list], **kwargs):
+    def fetch(self, query: Union[str, dict, list], *, method: str = "prediction", **kwargs):
         """
         Get prediction for a given UniProt ID.
         Args:
             query (str): UniProt ID to fetch prediction for.
+            method (str): Method to use for fetching data. Currently only "prediction" is supported.
         Returns:
             Dict: Prediction data.
         """
-        if not isinstance(query, str):
+        if method not in ["prediction"]:
+            raise ValueError(f"Method {method} is not supported. Supported methods are: prediction.")
+
+        if not isinstance(query, str) or not query:
             raise ValueError("Query must be a string representing a UniProt ID.")
         
-        url = f"{ALPHAFOLD.API_URL}{query}"
+        url = f"{ALPHAFOLD.API_URL}{method}/{query}"
         
         try:
             response = self.session.get(url)

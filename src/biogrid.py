@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Union, List, Dict, Any
+from typing import Optional, Set, Tuple, Union, List, Dict, Any
 import requests
 
 import pandas as pd
@@ -44,6 +44,7 @@ query_params_base = {
 
 
 class BioGRIDInterface(BaseAPIInterface):
+
     def __init__(
             self,
             cache_dir: Optional[str] = None,
@@ -69,6 +70,20 @@ class BioGRIDInterface(BaseAPIInterface):
         super().__init__(cache_dir=cache_dir, config_dir=config_dir, **kwargs)
         self.output_dir = output_dir or cache_dir
         os.makedirs(self.output_dir, exist_ok=True)
+
+    # Critiacl to ignore the accessKey when caching
+    def get_cache_ignore_keys(self) -> Set[str]:
+        """
+        Get the keys to ignore when caching.
+        Returns:
+            Set[str]: Set of keys to ignore.
+        """
+        return super().get_cache_ignore_keys().union({"accessKey"})
+    
+    # Probably max is another key to use. If you want to cache the results with different max values, then you should not ignore it.
+    def get_subquery_match_keys(self) -> Set[str]:
+        return super().get_subquery_match_keys().union({"id", "geneList", "taxId"})
+
     
     def fetch(self, query: Union[str, dict, list], *, method: str = "interactions", **kwargs):
         """
@@ -116,7 +131,15 @@ class BioGRIDInterface(BaseAPIInterface):
             response = self.session.get(url)
             self._delay()
             response.raise_for_status()
-            return response.json()
+
+            r = response.json()
+
+            # Special case for BioGRID
+            if isinstance(r, dict) and all(str(key).isdigit() for key in r.keys()):
+                # Convert to list of interactions
+                r = list(r.values())
+
+            return r
         except requests.exceptions.RequestException as e:
             # If message has 400 Client Error: Bad Request for url probably didn't found a given taxId or geneList
             if response.status_code == 400:
@@ -147,15 +170,15 @@ class BioGRIDInterface(BaseAPIInterface):
 
         if isinstance(data, requests.models.Response):
             data = data.json()
-        elif isinstance(data, dict):
+        elif isinstance(data, (dict, list)):
             data = data
         else:
-            raise ValueError("Response must be a requests.Response object or a dictionary.")
-        
-        # Check if all keys are numbers (indicating a list of interactions)
-        if isinstance(data, dict) and all(key.isdigit() for key in data.keys()):
-            # Convert to list of interactions
-            data = list(data.values())
+            raise ValueError("Response must be a requests.Response object, list or a dictionary.")
+
+        # # Check if all keys are numbers (indicating a list of interactions)
+        # if isinstance(data, dict) and all(str(key).isdigit() for key in data.keys()):
+        #     # Convert to list of interactions
+        #     data = list(data.values())
 
         return self._extract_fields(data, fields_to_extract)
 

@@ -114,7 +114,7 @@ def get_feature_keys(data: dict, sep: str = ".") -> dict:
                 nested_keys = get_feature_keys(value, sep=sep)
                 for nested_key, nested_value in nested_keys.items():
                     keys[f"{key}{sep}{nested_key}"] = f"{type(value).__name__}({nested_value})"   
-            if isinstance(value, list):
+            if isinstance(value, list) and value:
                 # Use the first element of the list to determine the type
                 if isinstance(value[0], dict):
                     nested_keys = get_feature_keys(value[0], sep=sep)

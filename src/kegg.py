@@ -1,5 +1,5 @@
 import requests, time, random, re, os
-from typing import Optional, Union, List, Dict, Any
+from typing import Optional, Union, List, Dict, Any, Set
 import pandas as pd
 
 from .base import BaseAPIInterface
@@ -58,6 +58,9 @@ class KEGGInterface(BaseAPIInterface):
         super().__init__(cache_dir=cache_dir, config_dir=config_dir, **kwargs)
         self.output_dir = output_dir or cache_dir
         os.makedirs(self.output_dir, exist_ok=True)
+    
+    def get_subquery_match_keys(self) -> Set[str]:
+        return super().get_subquery_match_keys().union({"entries"})
 
 
     def validate_query(self, method: str, query: Dict):
@@ -141,7 +144,15 @@ class KEGGInterface(BaseAPIInterface):
             if not response or not hasattr(response, 'text'):
                 print(f"Warning: No response or invalid response for query {query} with method {method}.")
                 return {}
-            return response.text # TODO check if for other functions we need to return json or text
+            
+            r = response.text.strip()
+            if r and "///" in r:
+                # Split entries by "///" and remove the last empty entry
+                r = r.split("\n///\n\n")
+                r[-1] = r[-1].replace("\n///", "")
+            else:
+                r = r.split("\n")
+            return r # TODO check if for other functions we need to return json or text
         except requests.exceptions.RequestException as e:
             print(f"Error fetching data for {query} with method {method}: {e}")
             return {}
@@ -182,19 +193,19 @@ class KEGGInterface(BaseAPIInterface):
             raise ValueError("Type must be either 'table' or 'entry'.")
         
         if type_response == "table":
-            d = data.strip().split("\n")
-            if not d:
+            #d = data.strip().split("\n")
+            if not data:
                 return {}
             parsed_data = []
             if columns:
                 headers = columns
             else:
-                headers = d[0].split(delimiter)
-            
-            if header:
-                d = d[1:]
+                headers = data[0].split(delimiter)
 
-            for line in d:
+            if header:
+                data = data[1:]
+
+            for line in data:
                 values = line.split(delimiter)
                 if len(values) != len(headers):
                     print(f"Warning: Line '{line}' does not match header length. Skipping.")
@@ -203,50 +214,47 @@ class KEGGInterface(BaseAPIInterface):
                 parsed_data.append(entry)
             return parsed_data
         else:
-            d = data.strip().split("///")[:-1]  # Split entries by "///" and remove the last empty entry
+            #d = data.strip().split("///")[:-1]  # Split entries by "///" and remove the last empty entry
 
-            parsed_data = []
             key_val_pattern = re.compile(r"^(\w+)(?:\s{2,}|\t+)(.+)$")
 
-            for entry in d:
-                parsed_entry = {}
-                current_key = None
-                for line in entry.strip().split("\n"):
-                    pattern_match = key_val_pattern.match(line)
-                    if pattern_match:
-                        key, value = pattern_match.groups()
-                        current_key = key
+            parsed_entry = {}
+            current_key = None
+            for line in data.strip().split("\n"):
+                pattern_match = key_val_pattern.match(line)
+                if pattern_match:
+                    key, value = pattern_match.groups()
+                    current_key = key
 
-                        if key not in parsed_entry:
-                            parsed_entry[key] = value
-                        else:
-                            if isinstance(parsed_entry[key], list):
-                                parsed_entry[key].append(value)
-                            else:
-                                parsed_entry[key] = [parsed_entry[key], value]
+                    if key not in parsed_entry:
+                        parsed_entry[key] = value
                     else:
-                        continuation = line.strip()
-                        if current_key is None:
-                            continue
-                        if isinstance(parsed_entry[current_key], list):
-                            parsed_entry[current_key].append(continuation)
+                        if isinstance(parsed_entry[key], list):
+                            parsed_entry[key].append(value)
                         else:
-                            parsed_entry[current_key] += ' ' + continuation
+                            parsed_entry[key] = [parsed_entry[key], value]
+                else:
+                    continuation = line.strip()
+                    if current_key is None:
+                        continue
+                    if isinstance(parsed_entry[current_key], list):
+                        parsed_entry[current_key].append(continuation)
+                    else:
+                        parsed_entry[current_key] += ' ' + continuation
 
-                # Special key values handling
-                if 'AASEQ' in parsed_entry:
-                    parsed_entry["AALEN"] = parsed_entry["AASEQ"].split(" ")[0]
-                    parsed_entry["AASEQ"] = "".join(parsed_entry["AASEQ"].split(" ")[1:])
-                
-                if 'NTSEQ' in parsed_entry:
-                    parsed_entry["NTLEN"] = parsed_entry["NTSEQ"].split(" ")[0]
-                    parsed_entry["NTSEQ"] = "".join(parsed_entry["NTSEQ"].split(" ")[1:])
-                
-                parsed_data.append(self._extract_fields(
-                    parsed_entry, fields_to_extract
-                ))
+            # Special key values handling
+            if 'AASEQ' in parsed_entry:
+                parsed_entry["AALEN"] = parsed_entry["AASEQ"].split(" ")[0]
+                parsed_entry["AASEQ"] = "".join(parsed_entry["AASEQ"].split(" ")[1:])
             
-            return parsed_data
+            if 'NTSEQ' in parsed_entry:
+                parsed_entry["NTLEN"] = parsed_entry["NTSEQ"].split(" ")[0]
+                parsed_entry["NTSEQ"] = "".join(parsed_entry["NTSEQ"].split(" ")[1:])
+            
+
+            return self._extract_fields(
+                parsed_entry, fields_to_extract
+            )
         
     def get_dummy(self, *, method: Optional[str] = None, **kwargs) -> dict:
         """

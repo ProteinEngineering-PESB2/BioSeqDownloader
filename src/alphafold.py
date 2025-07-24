@@ -1,7 +1,6 @@
 import requests, os, json
 from typing import Union, List, Dict, Optional
 
-import numpy as np
 import pandas as pd
 
 from .base import BaseAPIInterface

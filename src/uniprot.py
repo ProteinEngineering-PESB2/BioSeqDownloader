@@ -9,7 +9,7 @@ from io import StringIO
 
 from urllib.parse import urlparse, parse_qs, urlencode
 
-from .utils import (
+from src.utils import (
     extract_simple,
     extract_ec_numbers,
     extract_gene_names,
@@ -19,7 +19,7 @@ from .utils import (
     extract_keywords,
 )
 
-from .constants import DATABASES
+from src.constants import DATABASES
 
 API_URL = "https://rest.uniprot.org"
 POLLING_INTERVAL = 3 
@@ -197,6 +197,7 @@ class UniprotInterface(UniprotBase):
             'alphafold_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'biogrid_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'brenda_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'chembl_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'go_terms': ('uniProtKBCrossReferences', extract_database_terms),
             'interpro_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'kegg_ids': ('uniProtKBCrossReferences', extract_database_terms),

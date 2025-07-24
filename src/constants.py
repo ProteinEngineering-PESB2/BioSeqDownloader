@@ -9,6 +9,7 @@ DATABASES = {
     'biogrid_ids': 'BioGRID',
     'brenda_ids': 'BRENDA',
     'go_terms': 'GO',
+    'chembl_ids': 'ChEMBL',
     'interpro_ids': 'InterPro',
     'kegg_ids': 'KEGG',
     'pdb_ids': 'PDB',
@@ -44,6 +45,18 @@ BRENDA = DBConfig(
     API_URL = "https://www.brenda-enzymes.org/soap/brenda_zeep.wsdl",
     CACHE_DIR= os.path.join(BASE_CACHE_DIR, "brenda"),
     CONFIG_DIR=os.path.join(BASE_CONFIG_DIR, "brenda")
+)
+
+CHEMBL = DBConfig(
+    API_URL="https://www.ebi.ac.uk/chembl/api/data/",
+    CACHE_DIR=os.path.join(BASE_CACHE_DIR, "chembl"),
+    CONFIG_DIR=os.path.join(BASE_CONFIG_DIR, "chembl")
+)
+
+CHEBI = DBConfig(
+    API_URL="https://www.ebi.ac.uk/chebi/beta/api/public/",
+    CACHE_DIR=os.path.join(BASE_CACHE_DIR, "chebi"),
+    CONFIG_DIR=os.path.join(BASE_CONFIG_DIR, "chebi")
 )
 
 GENONTOLOGY = DBConfig(

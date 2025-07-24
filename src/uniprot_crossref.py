@@ -5,18 +5,19 @@ from dotenv import load_dotenv
 import pandas as pd 
 
 # TODO revisar imports y ver si se pueden optimizar
-from .uniprot import UniprotInterface
-from .alphafold import AlphafoldInterface
-from .brenda import BrendaInstance
-from .brenda import methods as brenda_methods
-from .biogrid import BioGRIDInterface
-from .interpro import InterproInstance
-from .genontology import GenOntologyInterface
-from .kegg import KEGGInterface
-from .proteindatabank import PDBInterface
-from .reactome import ReactomeInstance
-from .refseq import RefSeqInterface
-from .stringdb import StringInterface
+from src.uniprot import UniprotInterface
+from src.alphafold import AlphafoldInterface
+from src.brenda import BrendaInstance
+from src.brenda import methods as brenda_methods
+from src.biogrid import BioGRIDInterface
+from src.chembl import ChEMBLInterface
+from src.interpro import InterproInstance
+from src.genontology import GenOntologyInterface
+from src.kegg import KEGGInterface
+from src.proteindatabank import PDBInterface
+from src.reactome import ReactomeInstance
+from src.refseq import RefSeqInterface
+from src.stringdb import StringInterface
 
 outside_db = {
     "alphafold": "xref_alphafolddb",
@@ -132,6 +133,32 @@ def fetch_brenda(df, method: str):
     return instance.fetch_batch(
         queries=queries,
         method=method,
+        parse=True,
+        to_dataframe=True
+    )
+
+def fetch_chembl(df, method: str):
+    instance = ChEMBLInterface()
+
+    queries = []
+
+    ids = df[~df["chembl_ids"].astype(str).isin(["[]", "nan", "NaN", ""])]
+    ids.loc[:, 'chembl_ids'] = ids["chembl_ids"].apply(
+        lambda x: ast.literal_eval(x) if isinstance(x, str) and x.startswith("[") else [x]
+    )
+    ids = ids.explode("chembl_ids").drop_duplicates(subset=["chembl_ids"])
+    # TODO Remove Limit
+    ids = ids[:4]  # Limit to 4 for testing purposes
+
+    if not ids.empty:
+        queries.extend([{
+            "target_chembl_id": id["chembl_ids"]
+        } for _, id in ids.iterrows() if isinstance(id["chembl_ids"], str) and id["chembl_ids"] != "[]"])
+
+    return instance.fetch_batch(
+        queries=queries,
+        method=method,
+        pages_to_fetch=1,
         parse=True,
         to_dataframe=True
     )
@@ -351,6 +378,8 @@ def fetch_crossref(database_name: str, df: pd.DataFrame):
         case brenda if brenda.startswith("brenda_"):
             method = brenda.split("_")[1]
             return fetch_brenda(df, method=method)
+        case "chembl":
+            return fetch_chembl(df, "activity")
         case "genontology":
             return fetch_genontology(df, "ontology-term")
         case "interpro":
@@ -373,8 +402,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run cross-references for UniProt.")
     parser.add_argument("-i", "--input", type=str, required=True, help="Input file with UniProt IDs.")
     parser.add_argument("-o", "--out_dir", type=str, required=True, help="Output directory for results.")
-    parser.add_argument("-dbs", "--databases", type=str, default="alphafold,brenda,biogrid,interpro,kegg,pdb,reactome,refseq,string")
+    parser.add_argument("-dbs", "--databases", type=str, default="alphafold,brenda,biogrid,chembl,genontology,interpro,kegg,pdb,reactome,refseq,string")
     parser.add_argument("-d", "--download_structures", action="store_true", help="Download PDB structures.")
+    parser.add_argument("--no-concat", action="store_true", help="Do not concatenate results into a single DataFrame.")
 
     args = parser.parse_args()
 
@@ -423,10 +453,17 @@ if __name__ == "__main__":
             df=df
         )
         if isinstance(tmp_df, pd.DataFrame) and not tmp_df.empty:
-            # Make folder with filename
-            os.makedirs(os.path.join(args.out_dir, filename), exist_ok=True)
-            # Save the DataFrame to a CSV file
-            output_file = os.path.join(args.out_dir, f"{filename}/{db}_results.csv")
-            tmp_df.to_csv(output_file, index=False)
-            print(f"Results for {db} saved to {output_file}")
-            export_dfs[db] = tmp_df
+            if not args.no_concat:
+                df = pd.concat([df, tmp_df], axis=1)
+                df.to_csv(os.path.join(args.out_dir, f"{filename}_crossref.csv"), index=False)
+                print(f"Results for {db} concatenated into {filename}_crossref.csv")
+            else:
+                # Make folder with filename
+                os.makedirs(os.path.join(args.out_dir, filename), exist_ok=True)
+                # Save the DataFrame to a CSV file
+                output_file = os.path.join(args.out_dir, f"{filename}/{db}_results.csv")
+                tmp_df.to_csv(output_file, index=False)
+                print(f"Results for {db} saved to {output_file}")
+                export_dfs[db] = tmp_df
+        else:
+            print(f"No data fetched for {db} or the result is not a DataFrame.")

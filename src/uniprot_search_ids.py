@@ -1,9 +1,8 @@
 import pandas as pd 
 import argparse
-from uniprot import UniprotInterface
+from src.uniprot import UniprotInterface
 
 # TODO: Cambiar README.md esta con el antiguo nombre de carpeta 'scripts'
-# TODO: Cambiar al cache de conda.
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Download data from the web')
     parser.add_argument('-i', '--input', help='CSV file with UniProt IDs')

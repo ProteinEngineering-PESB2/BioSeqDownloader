@@ -181,7 +181,7 @@ def parse_blast_results(file_path: str, identity_threshold: float = 90.0):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Download Uniprot databases.")
-    parser.add_argument("-d", "--database", type=str, required=True, help="Database to download.")
+    parser.add_argument("-d", "--database", type=str, required=True, help="Database to download. Supported databases: " + ", ".join(databases.keys()))
     parser.add_argument("-e", "--extension", type=str, default="fasta", help="File extension of the database. Default is 'fasta'.")
     parser.add_argument("-f", "--sequences_file", type=str, help="File with sequences to run BLAST on.")
     parser.add_argument("-c", "--seq_column", type=str, default="sequences", help="Column name with sequences.")

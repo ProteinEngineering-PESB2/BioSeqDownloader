@@ -35,6 +35,12 @@ ALPHAFOLD = DBConfig(
     CONFIG_DIR=os.path.join(BASE_CONFIG_DIR, "alphafold")
 )
 
+BIODBNET = DBConfig(
+    API_URL="https://biodbnet.abcc.ncifcrf.gov/webServices/rest.php/biodbnetRestApi.json",
+    CACHE_DIR=os.path.join(BASE_CACHE_DIR, "biodbnet"),
+    CONFIG_DIR=os.path.join(BASE_CONFIG_DIR, "biodbnet")
+)
+
 BIOGRID = DBConfig(
     API_URL="https://webservice.thebiogrid.org/",
     CACHE_DIR=os.path.join(BASE_CACHE_DIR, "biogrid"),
@@ -71,6 +77,11 @@ KEGG = DBConfig(
     CONFIG_DIR=os.path.join(BASE_CONFIG_DIR, "kegg")
 )
 
+PANTHER = DBConfig(
+    API_URL="https://pantherdb.org/services/oai/pantherdb/",
+    CACHE_DIR=os.path.join(BASE_CACHE_DIR, "panther"),
+    CONFIG_DIR=os.path.join(BASE_CONFIG_DIR, "panther")
+)
 
 PDB = DBConfig(
     API_URL="https://data.rcsb.org/rest/v1/core/",
@@ -79,10 +90,22 @@ PDB = DBConfig(
     CONFIG_DIR= os.path.join(BASE_CONFIG_DIR, "pdb")
 )
 
+PUBCHEM = DBConfig(
+    API_URL="https://pubchem.ncbi.nlm.nih.gov/rest/pug/",
+    CACHE_DIR=os.path.join(BASE_CACHE_DIR, "pubchem"),
+    CONFIG_DIR=os.path.join(BASE_CONFIG_DIR, "pubchem")
+)
+
 REACTOME = DBConfig(
     API_URL = "https://reactome.org/ContentService/",
     CACHE_DIR = os.path.join(BASE_CACHE_DIR, "reactome"),
     CONFIG_DIR = os.path.join(BASE_CONFIG_DIR, "reactome")
+)
+
+RHEA = DBConfig(
+    API_URL = "https://www.rhea-db.org/",
+    CACHE_DIR = os.path.join(BASE_CACHE_DIR, "rhea"),
+    CONFIG_DIR = os.path.join(BASE_CONFIG_DIR, "rhea")
 )
 
 INTERPRO = DBConfig(

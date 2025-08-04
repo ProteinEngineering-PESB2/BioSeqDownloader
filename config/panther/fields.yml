@@ -1,0 +1,5 @@
+familyortholog:
+  pid: persistent_id1
+  sid: persistent_id2
+geneinfo:
+  id: family_id

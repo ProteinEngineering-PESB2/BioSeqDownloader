@@ -1,0 +1,149 @@
+compound:
+  properties:
+    cid: CID
+    molecular_formula: MolecularFormula
+    molecular_weight: MolecularWeight
+    smiles: SMILES
+    connectivity_smiles: ConnectivitySMILES
+    inchi: InChI
+    inchikey: InChIKey
+    iupac_name: IUPACName
+    title: Title
+    xlogp: XLogP
+    exact_mass: ExactMass
+    monoisotopic_mass: MonoisotopicMass
+    tpsa: TPSA
+    complexity: Complexity
+    charge: Charge
+    hbond_donor_count: HBondDonorCount
+    hbond_acceptor_count: HBondAcceptorCount
+    rotatable_bond_count: RotatableBondCount
+    heavy_atom_count: HeavyAtomCount
+    isotope_atom_count: IsotopeAtomCount
+    atom_stereo_count: AtomStereoCount
+    defined_atom_stereo_count: DefinedAtomStereoCount
+    undefined_atom_stereo_count: UndefinedAtomStereoCount
+    bond_stereo_count: BondStereoCount
+    defined_bond_stereo_count: DefinedBondStereoCount
+    undefined_bond_stereo_count: UndefinedBondStereoCount
+    covalent_unit_count: CovalentUnitCount
+    patent_count: PatentCount
+    patent_family_count: PatentFamilyCount
+    annotation_types: AnnotationTypes
+    annotation_type_count: AnnotationTypeCount
+    source_categories: SourceCategories
+    literature_count: LiteratureCount
+    volume_3d: Volume3D
+    x_steric_quadrupole_3d: XStericQuadrupole3D
+    y_steric_quadrupole_3d: YStericQuadrupole3D
+    z_steric_quadrupole_3d: ZStericQuadrupole3D
+    feature_count_3d: FeatureCount3D
+    feature_acceptor_count_3d: FeatureAcceptorCount3D
+    feature_donor_count_3d: FeatureDonorCount3D
+    feature_anion_count_3d: FeatureAnionCount3D
+    feature_cation_count_3d: FeatureCationCount3D
+    feature_ring_count_3d: FeatureRingCount3D
+    feature_hydrophobe_count_3d: FeatureHydrophobeCount3D
+    conformer_model_rmsd_3d: ConformerModelRMSD3D
+    effective_rotor_count_3d: EffectiveRotorCount3D
+    conformer_count_3d: ConformerCount3D
+    fingerprint_2d: Fingerprint2D
+  synonyms:
+    id: id.id.cid
+    atoms: atoms
+    bonds: bonds
+    coords: coords
+    charge: charge
+    props: props
+    count: count
+  record:
+    id: id.id.cid
+    atoms: atoms
+    bonds: bonds
+    coords: coords
+    charge: charge
+    props: props
+    count: count
+  sids:
+    cid: CID
+    sid: SID
+  aids:
+    cid: CID
+    aid: AID
+  assaysummary:
+    aid: AID
+    panel_member_id: Panel Member ID
+    sid: SID
+    cid: CID
+    activity_outcome: Activity Outcome
+    target_accession: Target Accession
+    target_geneid: Target GeneID
+    activity_value_um: Activity Value [uM]
+    activity_name: Activity Name
+    assay_name: Assay Name
+    assay_type: Assay Type
+    pubmed_id: PubMed ID
+    rna_i: RNAi
+  description:
+    cid: CID
+    title: Title
+    description: Description
+    description_source_name: DescriptionSourceName
+    description_url: DescriptionURL
+protein:
+  summary:
+    protein_accession: ProteinAccession
+    name: Name
+    taxonomy_id: TaxonomyID
+    taxonomy: Taxonomy
+    synonym: Synonym
+  aids:
+    protein_accession: ProteinAccession
+    aid: AID
+  concise:
+    aid: AID
+    sid: SID
+    cid: CID
+    activity_outcome: Activity Outcome
+    target_accession: Target Accession
+    target_geneid: Target GeneID
+    activity_name: Activity Name
+    activity_qualifier: Activity Qualifier
+    activity_value_um: Activity Value [uM]
+    assay_name: Assay Name
+    assay_type: Assay Type
+    pubmed_id: PubMed ID
+    rna_i: RNAi
+  pwaccs:
+    protein_accession: ProteinAccession
+    pathway_accession: PathwayAccession
+gene:
+  pwaccs:
+    gene_id: GeneID
+    pathway_accession: PathwayAccession
+  concise:
+    aid: AID
+    sid: SID
+    cid: CID
+    activity_outcome: Activity Outcome
+    target_accession: Target Accession
+    target_geneid: Target GeneID
+    activity_name: Activity Name
+    activity_qualifier: Activity Qualifier
+    activity_value_um: Activity Value [uM]
+    assay_name: Assay Name
+    assay_type: Assay Type
+    pubmed_id: PubMed ID
+    rna_i: RNAi
+  aids:    
+    protein_accession: ProteinAccession
+    aid: AID
+  summary:
+    gene_id: GeneID
+    symbol: Symbol
+    name: Name
+    taxonomy_id: TaxonomyID
+    taxonomy: Taxonomy
+    description: Description
+    synonym: Synonym
+  

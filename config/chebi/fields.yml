@@ -1,0 +1,4 @@
+compound:
+  id: chebi_accession
+compounds:
+  id: standardized_chebi_id

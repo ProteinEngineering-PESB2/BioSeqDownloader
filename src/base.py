@@ -1,22 +1,26 @@
-import time, random, os, hashlib, json, re
+import time, random, os, hashlib, json, re, ast
 import inspect
 import requests
 import itertools
 import yaml
-from typing import Any, Set, Dict, List, Tuple, Union
+from collections import defaultdict
+from typing import Any, Set, Dict, List, Tuple, Union, ClassVar
+from requests.models import Response, Request
 from requests.adapters import HTTPAdapter, Retry
+from requests.exceptions import RequestException
 import pandas as pd
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from typing import Union, List, Dict, Optional
 from itertools import permutations
 
-from .utils import get_feature_keys, get_nested
+from .utils import get_feature_keys, get_nested, get_primary_keys, validate_parameters
 
 class BaseAPIInterface(ABC):
+    METHODS: ClassVar[Dict[str, Any]] = {}
 
     cache_key_ignore_args: Set[str] = {
-        "parse", "to_dataframe", "fields_to_extract", "config_key", "pages_to_fetch", "outfmt", "format"}
+        "parse", "to_dataframe", "fields_to_extract", "config_key", "pages_to_fetch", "outfmt", "format", "download"}
     subquery_match_keys: Set[str] = set()
 
     def __init__(
@@ -171,7 +175,9 @@ class BaseAPIInterface(ABC):
             
 
     def _hash_key(self, key: str) -> str:
-        return hashlib.md5(key.encode("utf-8")).hexdigest()
+        # TODO change it to hash
+        #return hashlib.md5(key.encode("utf-8")).hexdigest()
+        return key
     
     def _get_cache_path(self, identifier: str) -> str:
         """
@@ -226,7 +232,8 @@ class BaseAPIInterface(ABC):
         """
         return self.configs.get(key, {})
 
-    def _resolve_fields_from_kwargs(self, include_defaults_from=None, **kwargs) -> Optional[Dict]:
+    #def _resolve_fields_from_kwargs(self, include_defaults_from=None, **kwargs) -> Optional[Dict]:
+    def _resolve_fields_from_kwargs(self, **kwargs) -> Optional[Dict]:
         """
         Resolve fields_to_extract by matching kwargs against keys in fields.yml.
 
@@ -234,18 +241,10 @@ class BaseAPIInterface(ABC):
         """
         fields_config = self.get_config("fields") if self.use_config else {}
         known_keys = set(fields_config.keys())
+        method = kwargs.get("method", "NOT_GIVEN")
 
-        values = [str(v) for v in kwargs.values() if isinstance(v, str)]
-
-        #print(f"Values from kwargs: {values}")
-
-        if include_defaults_from is not None:
-            sig = inspect.signature(include_defaults_from)
-            for name, param in sig.parameters.items():
-                if param.default is not inspect.Parameter.empty and name not in kwargs:
-                    default_val = param.default
-                    if isinstance(default_val, str):
-                        values.append(default_val)
+        values = [method]
+        values.extend([str(v) for v in kwargs.values() if isinstance(v, str)])
 
         # 1. Check if any value in kwargs matches a known key
         for v in values:
@@ -269,12 +268,13 @@ class BaseAPIInterface(ABC):
         if parse:
             if not fields_to_extract and self.use_config:
                 # 1. Try to resolve fields from kwargs
-                fields_to_extract = self._resolve_fields_from_kwargs(include_defaults_from=self.fetch, **kwargs)
+                #fields_to_extract = self._resolve_fields_from_kwargs(include_defaults_from=self.fetch, **kwargs)
+                fields_to_extract = self._resolve_fields_from_kwargs(**kwargs)
 
                 # 2. If not found, try to get from config
                 if not fields_to_extract and config_key:
                     fields_to_extract = self.get_config(config_key) or None
-
+                
             if isinstance(data, list):
                 result = [self.parse(data=d, fields_to_extract=fields_to_extract, **kwargs) for d in data]
             elif isinstance(data, (dict, str)):
@@ -298,6 +298,116 @@ class BaseAPIInterface(ABC):
         return result
     
     ##################
+    # Methods to handle complex queries and making subqueries using METHODS
+    ##################
+    
+    def _get_method_spec(self, method: str) -> Dict[str, Any]:
+        if method not in self.METHODS:
+            raise ValueError(f"Unknown method '{method}'")
+        return self.METHODS[method]
+
+    def _prepare_params(self, query, spec, **overrides) -> dict:
+        """
+        - Validates types and defaults from spec["parameters"]
+        - If value is a list and name is in spec["group_queries"], joins with spec["separator"]
+        """
+        params = {}
+        separator = spec.get("separator", ",")
+
+        for name, (typ, default, is_id) in spec["parameters"].items():
+            val = default
+            # Override from query dict or direct string/list
+            if isinstance(query, dict) and name in query:
+                val = query[name]
+            elif not isinstance(query, dict) and is_id:
+                # If a string or list is provided, map to the primary parameter
+                val = query
+            # Override with explicit overrides
+            if name in overrides:
+                val = overrides[name]
+
+            if val is None and default is None:
+                continue
+
+            # Handle lists for group_queries
+            if isinstance(val, list) and name in spec.get("group_queries", []):
+                val = separator.join(val)
+
+            params[name] = val
+
+        return params
+
+    def _make_identifier(self, query, spec) -> str:
+        """
+        Construye un identificador único a partir de las keys is_id=True,
+        usado para nombrar el cache key.
+        """
+        keys = [k for k, (_, _, is_id) in spec["parameters"].items() if is_id]
+        parts = []
+        if isinstance(query, dict):
+            for k in keys:
+                if k in query:
+                    parts.append(str(query[k]))
+        else:
+            # query str o list
+            parts.append(str(query))
+        return "_".join(parts)
+
+    def initialize_method_parameters(self, query: Union[str, dict, list], method: str, method_definition: dict, **kwargs):
+        if method not in method_definition:
+            raise ValueError(f"Method '{method}' is not defined in the method definition. Available methods: {list(method_definition.keys())}")
+        
+        method_info = method_definition[method]
+        http_method = method_info["http_method"]
+        path_param = method_info["path_param"]
+        parameters = method_info["parameters"]
+        group_queries = method_info["group_queries"]
+        separator = method_info.get("separator", ",")
+
+        primary_keys = get_primary_keys(parameters)
+        
+        if not primary_keys:
+            raise ValueError(f"No primary keys defined for method '{method}'. Please check the method definition.")
+        
+        if len(primary_keys) > 1:
+            if not isinstance(query, dict):
+                raise ValueError(f"Query must be a dictionary when multiple primary keys are defined for method '{method}'. "
+                             f"Received: {type(query)} with value {query}")
+            # if not all(key in query.keys() for key in primary_keys):
+            #     raise ValueError(f"Query must contain primary keys {primary_keys} for method '{method}'. "
+            #                  f"Received: {query.keys()} with value {query}")
+        
+        inputs = {}
+
+        if isinstance(query, (dict)):
+            if group_queries:
+                for key in group_queries:
+                    if key in query and isinstance(query[key], list):
+                        inputs[key] = separator.join(query[key])
+                    # TODO Changed else for elif, check
+                    elif key in query:
+                        inputs[key] = query.get(key, "")
+                inputs.update({k: v for k, v in query.items() if k not in group_queries})
+            else:
+                inputs.update(query)
+        elif isinstance(query, list):
+            # Asume that the list contains or a single value or a list of values for the primary key
+            if group_queries and primary_keys[0] in group_queries:
+                inputs[primary_keys[0]] = separator.join(query)
+            else:
+                inputs[primary_keys[0]] = query
+        elif isinstance(query, str):
+            inputs[primary_keys[0]] = query
+        else:
+            raise ValueError(f"Unsupported query type: {type(query)}. Expected str, dict, or list.")
+        
+        # Probably this line is not needed. All inputs should be in the query 
+        # TODO TRY IF IN OTHER APIS THIS CHANGE MAKE ERRORS
+        #inputs.update([(k, v) for k, v in kwargs.items() if k not in self.get_cache_ignore_keys()])
+
+        return http_method, path_param, parameters, inputs
+    
+    ##################
     # These 3 methods, decompose_query, get_matching_values, and split_results_by_subquery
     # are used to handle complex queries that can be decomposed into subqueries.
     # They allow the API to handle queries that can be split into smaller parts,
@@ -307,38 +417,55 @@ class BaseAPIInterface(ABC):
     # such as BioGRID, which can take a list of genes and return interactions for each
     # gene separately.
     ##################
-        
-    def decompose_query(self, query: dict) -> Optional[List[Tuple[str, dict]]]:
+
+    def multiple_queries_supported(self, method: str, method_definition: dict) -> bool:
+        """
+        Check if the API method supports multiple queries based on the method definition.
+        """
+        if method not in method_definition:
+            return False
+
+        if method_definition[method].get("group_queries"):
+            return True
+        else:
+            return False
+
+    def decompose_query(self, query: dict, method: str) -> Optional[List[Tuple[str, dict]]]:
         """
         Decompose a query into multiple subqueries if any of the identity keys contain lists.
         Returns:
             List of (identifier, subquery) tuples or None if no decomposition is needed.
         """
-        keys = self.get_subquery_match_keys()
+        if method not in self.METHODS:
+            raise ValueError(f"Method '{method}' is not supported. Available methods: {list(self.METHODS.keys())}")
+        
+        param_spec = self.METHODS[method].get("parameters", {})
+        group_queries = self.METHODS[method].get("group_queries", [])
 
-        # Determine which keys contain lists
-        list_keys = [k for k in keys if isinstance(query.get(k), list)]
-        scalar_keys = [k for k in keys if k in query and not isinstance(query[k], list)]
-
-        if not list_keys:
-            return None  # No decomposition needed
+        # Identify ID keys
+        keys = [k for k, (_, _, is_id) in param_spec.items() if is_id and k in query]
+        
+        # If no keys are found in group_queries, return None
+        if not any(k in group_queries for k in keys):
+            return [] # No decomposition needed
         
         # Collect values for product
-        value_combinations = list(itertools.product(*(query[k] for k in list_keys)))
-
+        value_combinations = list(itertools.product(*(query[k] for k in group_queries)))
+        
         subqueries = []
         for combo in value_combinations:
             subquery = query.copy()
             identifier_parts = []
 
-            # Set values from the list_keys
-            for key, value in zip(list_keys, combo):
+            # Set values from the group_queries
+            for key, value in zip(group_queries, combo):
                 subquery[key] = value
                 identifier_parts.append(str(value))
 
-            # Include scalar_keys in identifier
-            for key in scalar_keys:
-                identifier_parts.append(str(query[key]))
+            # Include other keys in identifier
+            for key in keys:
+                if key not in group_queries:
+                    identifier_parts.append(str(query[key]))
 
             identifier = "_".join(identifier_parts)
             subqueries.append((identifier, subquery))
@@ -359,58 +486,151 @@ class BaseAPIInterface(ABC):
             str(query[k]).lower() for k in keys if k in query and query[k] is not None
         ]
 
-
     def split_results_by_subquery(
         self, full_result: Any, subqueries: List[Tuple[str, dict]]
     ) -> Dict[str, List[dict]]:
         """
         Generic implementation: for each result, check if any subquery's values appear in the result
-        using regex-based partial matching.
+        using token-based partial matching.
 
         Returns a mapping {id_: [results]}.
         """
-        print(full_result)
-        if not isinstance(full_result, list):
-            raise ValueError("Could not split the query into subqueries. Expected full_result to be a list of dicts")
+        if isinstance(full_result, dict):
+            full_result = [full_result]
+        elif not isinstance(full_result, list):
+            raise ValueError("Expected full_result to be a list of dicts")
+        
 
         mapping = {identifier: [] for identifier, _ in subqueries}
 
-        # Auxiliary function to normalize values, special case for KEGG
         def normalize(val):
+            """Split and lowercase input values for loose token matching."""
             if not val:
                 return []
+            if isinstance(val, str) and val.startswith("[") and val.endswith("]"):
+                try:
+                    val = ast.literal_eval(val)
+                except Exception:
+                    pass
             if isinstance(val, (list, tuple)):
-                tokens = val
-            else:
-                tokens = re.split(r"[\s:\-/|]", str(val))
-            
-            return [t.lower() for t in tokens if t]
+                tokens = []
+                for elem in val:
+                    tokens.extend(normalize(elem))
+                return tokens
+            return [t.lower() for t in re.split(r"[\s:\-/|]", str(val)) if t]
 
-        # Preprocess values to search for each subquery
-        subquery_values = {
-            identifier: sum((normalize(v) for v in self.get_matching_values(query)), [])
-            for identifier, query in subqueries
-        }
+        def extract_all_values(obj):
+            """Recursively extract all string-like values from a nested structure."""
+            result = []
+            if isinstance(obj, dict):
+                for v in obj.values():
+                    result.extend(extract_all_values(v))
+            elif isinstance(obj, list):
+                for item in obj:
+                    result.extend(extract_all_values(item))
+            elif isinstance(obj, (str, int, float)):
+                result.append(str(obj))
+            return result
 
+        subquery_values = {}
+        for identifier, query in subqueries:
+            values = self.get_matching_values(query)
+            norm = sum((normalize(v) for v in values), [])
+            subquery_values[identifier] = norm
 
-        for item in full_result:
-            item_str = item if isinstance(item, str) else json.dumps(item)
-            item_str = item_str.lower()  # Ensure case-insensitive matching
+        for i, item in enumerate(full_result):
+            tokens = extract_all_values(item)
+            item_tokens = set(normalize(tokens))
 
-            for identifier, values in subquery_values.items():
-                if all(
-                    re.search(re.escape(str(v).lower()), item_str)
-                    for v in values if v
-                ):
+            for identifier, expected_tokens in subquery_values.items():
+                # Match if there's any overlap
+                if expected_tokens and (set(expected_tokens) & item_tokens):
                     mapping[identifier].append(item)
 
         return mapping
+    
+    # def split_results_by_subquery(
+    #     self, full_result: Any, subqueries: List[Tuple[str, dict]]
+    # ) -> Dict[str, List[dict]]:
+    #     """
+    #     Generic implementation: for each result, check if any subquery's values appear in the result
+    #     using regex-based partial matching.
 
+    #     Returns a mapping {id_: [results]}.
+    #     """
+    #     if not isinstance(full_result, list):
+    #         raise ValueError("Could not split the query into subqueries. Expected full_result to be a list of dicts")
+
+    #     mapping = {identifier: [] for identifier, _ in subqueries}
+
+    #     # Auxiliary function to normalize values, special case for KEGG
+    #     def normalize(val):
+    #         """
+    #         Normalize a value by splitting it into tokens and converting to lowercase.
+    #         Handles lists, tuples, and strings.
+    #         """
+    #         if not val:
+    #             return []
+
+    #         # Tries to convert strings like "['a', 'b']" to actual lists
+    #         if isinstance(val, str) and val.startswith("[") and val.endswith("]"):
+    #             try:
+    #                 val = ast.literal_eval(val)
+    #             except Exception:
+    #                 pass  # If it fails, treat as a string
+
+    #         # If it's a list/tuple, flatten each item
+    #         if isinstance(val, (list, tuple)):
+    #             tokens = []
+    #             for elem in val:
+    #                 if isinstance(elem, str):
+    #                     tokens.extend(re.split(r"[\s:\-/|]", elem))
+    #                 else:
+    #                     tokens.append(str(elem))
+    #         else:
+    #             tokens = re.split(r"[\s:\-/|]", str(val))
+
+    #         return [t.lower() for t in tokens if t]
+
+    #     # Preprocess values to search for each subquery
+    #     subquery_values = {
+    #         identifier: sum((normalize(v) for v in self.get_matching_values(query)), [])
+    #         for identifier, query in subqueries
+    #     }
+
+
+    #     for item in full_result:
+    #         item_str = item if isinstance(item, str) else json.dumps(item)
+    #         item_str = item_str.lower()  # Ensure case-insensitive matching
+
+    #         for identifier, values in subquery_values.items():
+    #             if all(
+    #                 re.search(re.escape(str(v).lower()), item_str)
+    #                 for v in values if v
+    #             ):
+    #                 mapping[identifier].append(item)
+    #     return mapping
+    
+    def merge_dicts(self, dicts):
+        merged = {}
+        for d in dicts:
+            for k, v in d.items():
+                if k not in merged:
+                    merged[k] = v
+                else:
+                    # Si ya hay una lista, añade solo si es distinto
+                    if isinstance(merged[k], list):
+                        if v not in merged[k]:
+                            merged[k].append(v)
+                    else:
+                        if merged[k] != v:
+                            merged[k] = [merged[k], v]
+        return merged
     ###################
     # General-purpose fetch methods
     # These methods are used to fetch data from the API, either for a single query or
     # a batch of queries. They handle caching, parsing, and optional DataFrame conversion.
-    ###################     
+    ###################
     
     def fetch_single(self, query: Union[str, dict], parse: bool = False, *args, **kwargs) -> Union[List, Dict, pd.DataFrame]:
         """
@@ -427,85 +647,68 @@ class BaseAPIInterface(ABC):
         Returns:
             Any: Fetched data, parsed if requested.
         """
-        to_dataframe = kwargs.get("to_dataframe", False)
+        # Extract flags and avoid passing twice to _maybe_parse
+        to_dataframe = kwargs.pop("to_dataframe", False)
+        method       = kwargs.get("method", "NOT_GIVEN")
         
-        if isinstance(query, dict):
-            subqueries = self.decompose_query(query)
-        elif isinstance(query, list) and all(isinstance(q, str) for q in query):
-            # If query is a list of strings, treat it as a single query with identifiers
-            subqueries = [(q, {"identifiers": [q]}) for q in query]
-        else:
-            subqueries = None
+        # Get method specification
+        spec = self._get_method_spec(method)
+        if spec is None:
+            raise ValueError(f"Method '{method}' is not supported. Available: {list(self.METHODS)}")
+        group_key = spec.get('group_queries', [None])[0] 
 
-        if subqueries:
-
-            raw_results = {}
-
-            # Determine which subqueries are already cached
-            uncached_subqueries = []
-            for identifier, subquery in subqueries:
+        # If group_key is present and value is list: check cache per element
+        if isinstance(query, dict) and group_key and isinstance(query.get(group_key), list):
+            results = {}
+            remaining = []
+            # values = list(query[group_key])
+            subqueries = self.decompose_query(query, method)
+            # Check cache per individual
+            for identifier, subq in subqueries:
                 cache_key = self._make_cache_key(identifier, **kwargs)
                 if self.has_results(cache_key):
-                    cached = self.load_cache(cache_key)
-                    data = cached.to_dict(orient='records') if isinstance(cached, pd.DataFrame) else cached
-                    parsed = self._maybe_parse(data=data, parse=parse, **kwargs)
-                    raw_results[identifier] = parsed
+                    raw = self.load_cache(cache_key)
+                    parsed = self._maybe_parse(data=raw, parse=parse, to_dataframe=to_dataframe, **kwargs)
+                    results[identifier] = parsed
                 else:
-                    uncached_subqueries.append((identifier, subquery))
+                    remaining.append((identifier, subq)) 
 
-            # If any are missing, fetch full result and split
-            if uncached_subqueries:
-                full_result = self.fetch(query=query, *args, **kwargs)
-                # Mapping contains the results split by subquery identifiers
-                if not full_result:
-                    print("No results found for the provided query. Returning empty results.")
-                    return {}
-                mapping = self.split_results_by_subquery(full_result, uncached_subqueries)
-
-                for identifier, _ in uncached_subqueries:
+            # If some remain, fetch them together
+            if remaining:
+                combined = self.merge_dicts([subq for _, subq in remaining])
+                params = self._prepare_params(combined, spec, **kwargs)
+                full = self.fetch(query=params, *args, **kwargs)
+                mapping = self.split_results_by_subquery(full, remaining)
+                for identifier, _ in remaining:
                     partial_result = mapping.get(identifier, [])
                     if not partial_result:
                         print(f"No results found for identifier {identifier}. Skipping.")
-                        continue  # Skip if no results for this identifier
+                        continue
                     cache_key = self._make_cache_key(identifier, **kwargs)
                     self.save_cache(cache_key, partial_result)
-                    parsed = self._maybe_parse(data=partial_result, parse=parse, **kwargs)
-                    raw_results[identifier] = parsed
+                    parsed = self._maybe_parse(data=partial_result, parse=parse, to_dataframe=to_dataframe, **kwargs)
+                    results[identifier] = parsed
 
-            if to_dataframe and raw_results:
-                return pd.concat(raw_results.values(), ignore_index=True) if all(isinstance(r, pd.DataFrame) for r in raw_results.values()) else pd.DataFrame(raw_results)
-            else:
-                return list(raw_results.values())
-
+            if to_dataframe:
+                dfs = []
+                for data in results.values():
+                    df = data if isinstance(data, pd.DataFrame) else pd.DataFrame(data)
+                    dfs.append(df)
+                return pd.concat(dfs, ignore_index=True)
+            
+            return list(results.values())
         else:
-            # No decomposition needed
-            cache_key = self._make_cache_key(query, **kwargs)
-
+            params     = self._prepare_params(query, spec, **kwargs)
+            identifier = self._make_identifier(query, spec)
+            cache_key  = self._make_cache_key(identifier, **kwargs)
             if self.has_results(cache_key):
-                cached = self.load_cache(cache_key)
-                result = cached.to_dict(orient='records') if isinstance(cached, pd.DataFrame) else cached
+                raw = self.load_cache(cache_key)
             else:
-                result = self.fetch(query=query, *args, **kwargs)
-                if result:
-                    self.save_cache(cache_key, result)
+                raw = self.fetch(query=params, *args, **kwargs)
+                if raw:  # only save non-empty
+                    self.save_cache(cache_key, raw)
+            return self._maybe_parse(data=raw, parse=parse, to_dataframe=to_dataframe, **kwargs)
 
-            result = self._maybe_parse(data=result, parse=parse, **kwargs)
-            return result if result is not None else {}
-        
-        # cache_key = self._make_cache_key(query, **kwargs)
-        # print(f"Cache key for fetch_single: {cache_key}")
-
-        # if self.has_results(cache_key):
-        #     cached = self.load_cache(cache_key)
-        #     result = cached.to_dict(orient='records') if isinstance(cached, pd.DataFrame) else cached
-        # else:
-        #     result = self.fetch(query=query, *args, **kwargs)
-        #     if result:
-        #         self.save_cache(cache_key, result)
-        
-        # result = self._maybe_parse(data=result, parse=parse, **kwargs)
-
-        # return result if result is not None else {}
     
     def fetch_batch(self, queries: List[Union[str, dict]], parse: bool = False, *args, **kwargs) -> Union[List, pd.DataFrame]:
         """
@@ -521,7 +724,8 @@ class BaseAPIInterface(ABC):
         Returns:
             List: List of fetched data, parsed if requested.
         """
-        results: List[Any] = [None] * len(queries)
+        method = kwargs.get("method", "NOT_GIVEN")
+        results: List[Any] = []
 
         # Separate queries in cache and not in cache
         queries_to_fetch = []
@@ -532,39 +736,29 @@ class BaseAPIInterface(ABC):
         ###############################
         for i, query in enumerate(queries):
             if isinstance(query, dict):
-                subqueries = self.decompose_query(query)
+                subqueries = self.decompose_query(query, method)
             elif isinstance(query, list) and all(isinstance(q, str) for q in query):
                 subqueries = [(q, {"identifiers": [q]}) for q in query]
             else:
                 subqueries = None
-
             if subqueries:
-                all_cached = True
-                partial_results = {}
                 for identifier, subquery in subqueries:
                     cache_key = self._make_cache_key(identifier, **kwargs)
                     if self.has_results(cache_key):
                         cached = self.load_cache(cache_key)
                         result = cached.to_dict(orient='records') if isinstance(cached, pd.DataFrame) else cached
-                        parsed = self._maybe_parse(data=result, parse=parse, **kwargs)
-                        partial_results[identifier] = parsed
+                        results.append(self._maybe_parse(data=result, parse=parse, **kwargs))
                     else:
-                        all_cached = False
+                        index_query_map[i] = query
+                        queries_to_fetch.append(query)
 
-                if all_cached:
-                    # All results are available in cache
-                    results[i] = list(partial_results.values())
-                else:
-                    # Some results are not cached, need to fetch
-                    index_query_map[i] = query
-                    queries_to_fetch.append(query)
             else:
                 # No subqueries, use the classic key
                 cache_key = self._make_cache_key(query, **kwargs)
                 if self.has_results(cache_key):
                     cached = self.load_cache(cache_key)
                     result = cached.to_dict(orient='records') if isinstance(cached, pd.DataFrame) else cached
-                    results[i] = self._maybe_parse(data=result, parse=parse, **kwargs)
+                    results.append(self._maybe_parse(data=result, parse=parse, **kwargs))
                 else:
                     index_query_map[i] = query
                     queries_to_fetch.append(query)
@@ -616,7 +810,7 @@ class BaseAPIInterface(ABC):
             raise ValueError("Query must be provided to get dummy data.")
 
         response = self.fetch_single(query=query, parse=parse, *args, **kwargs)
-
+        print(f"type(response)={response}")
         if isinstance(response, list):
             return get_feature_keys(response[0] if response else {})
         elif isinstance(response, dict):
@@ -660,13 +854,62 @@ class BaseAPIInterface(ABC):
             parsed = get_nested(data, "")
         
         return parsed
-            
-    @abstractmethod
-    def query_usage(self) -> str:
-        raise NotImplementedError
+
+    def _do_request(self, query: Union[str, dict, list], *, method: str, **kwargs) -> Union[dict, list, Response]:
+        """
+        Fetch data from the API based on the provided query and method.
+        Args:
+            query (Union[str, dict, list]): Query to fetch data for.
+            method (str): Method to use for fetching data.
+        kwargs:
+            api_url (str): API URL to use for the request.
+        Returns:
+            dict: Fetched data from the API.
+        Raises:
+            ValueError: If the method is not defined in the METHODS.
+            RequestException: If there is an error during the HTTP request. 
+        """
+        api_url = kwargs.pop("api_url", None)
+
+        if not api_url:
+            raise ValueError("API URL must be provided in kwargs.")
+        http_method, path_param, parameters, inputs = self.initialize_method_parameters(query, method, self.METHODS, **kwargs)
+
+        try:
+            validated_params = validate_parameters(inputs, parameters)
+        except ValueError as e:
+            raise ValueError(f"Invalid parameters for method '{method}': {e}")
+
+        url = f"{api_url}{method}"
+
+        if path_param:
+            path_value = validated_params.pop(path_param)
+            url += f"{path_value}"
+        
+        req = Request(
+            method=http_method,
+            url=url,
+            params=validated_params
+        )
+        prepared = self.session.prepare_request(req)
+        print(f"Prepared request: {prepared.url}")
+
+        try:
+            response = self.session.send(prepared)
+            self._delay()
+            response.raise_for_status()
+
+            return response
+        except RequestException as e:
+            print(f"Error fetching {query} for method '{method}': {e}")
+            return {}
     
     @abstractmethod
     def fetch(self, query: Union[str, dict, list], *, method: str, **kwargs):
+        raise NotImplementedError
+    
+    @abstractmethod
+    def query_usage(self) -> str:
         raise NotImplementedError
     
     @abstractmethod

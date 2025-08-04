@@ -4,7 +4,7 @@ import pandas as pd
 
 from .base import BaseAPIInterface
 from .constants import KEGG
-from .utils import get_nested
+from .utils import get_nested, validate_parameters
 
 # More info about KEGG API: https://www.kegg.jp/kegg/rest/keggapi.html
 # TODO Solve known problem with KEGG API:
@@ -34,6 +34,21 @@ METHOD_OPTIONS = {
 }
 
 class KEGGInterface(BaseAPIInterface):
+    # TODO add more methods from KEGG API. DDI and Link should be added.
+    METHODS = {
+        "get": {
+            "http_method": "GET",
+            "path_param": DATABASES,
+            "parameters": {
+                "entries": (str, None, True),
+                "db": (str, None, False),
+                "option": (str, None, False)
+            },
+            "group_queries": ["entries"],
+            "separator": "+",
+        }
+    }
+
     def __init__(
             self,
             cache_dir: Optional[str] = None,
@@ -108,34 +123,29 @@ class KEGGInterface(BaseAPIInterface):
         Returns:
             any: Response from the API.
         """
-
         if not method:
-            raise ValueError("Method must be specified. Supported methods are: " + ", ".join(METHODS))
-        if not isinstance(query, dict):
-            raise ValueError("Query must be a dictionary with keys 'entries', 'db', and 'option'.")
+            raise ValueError("Method must be specified. Supported methods are: " + ", ".join(self.METHODS.keys()))
 
-        self.validate_query(method, query)
+        _, _, parameters, inputs = self.initialize_method_parameters(query, method, self.METHODS, **kwargs)
 
-        if method not in METHODS:
-            raise ValueError(f"Method {method} is not supported. Supported methods are: {', '.join(METHODS)}.")   
+        try:
+            validated_params = validate_parameters(inputs, parameters)
+        except ValueError as e:
+            raise ValueError(f"Invalid parameters for method '{method}': {e}")
 
         url = f"{KEGG.API_URL}{method}"
+        
 
-        if 'db' in query.keys() and query['db']:
-            url += f"/{query['db']}"
-        if 'entries' in query.keys() and query['entries']:
-            if isinstance(query['entries'], list):
-                q = "+".join(query['entries'])
-            elif isinstance(query['entries'], str):
-                q = str(query['entries'])
-            else:
-                raise ValueError("Query must be a string or a list of strings.")
-            
+        if 'db' in validated_params.keys() and validated_params['db']:
+            url += f"/{validated_params['db']}"
+        if 'entries' in validated_params.keys() and validated_params['entries']:
+            q = str(validated_params['entries'])
             url += f"/{q}"
-        if 'option' in query.keys() and query['option']:
-            if method not in METHOD_OPTIONS or query['option'] not in METHOD_OPTIONS[method]:
-                raise ValueError(f"Option {query['option']} is not supported for method {method}. Supported options are: {', '.join(METHOD_OPTIONS.get(method, []))}.")
-            url += f"/{query['option']}"
+
+        if 'option' in validated_params.keys() and validated_params['option']:
+            if method not in METHOD_OPTIONS or validated_params['option'] not in METHOD_OPTIONS[method]:
+                raise ValueError(f"Option {validated_params['option']} is not supported for method {method}. Supported options are: {', '.join(METHOD_OPTIONS.get(method, []))}.")
+            url += f"/{validated_params['option']}"
 
         try:
             response = self.session.get(url)

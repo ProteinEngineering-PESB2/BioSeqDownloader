@@ -1,0 +1,5 @@
+activity:
+  assay_id: assay_chembl_id
+  type: type
+  units: units
+  value: value

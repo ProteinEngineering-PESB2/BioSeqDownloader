@@ -1,12 +1,14 @@
 import os
 from typing import Optional, Set, Tuple, Union, List, Dict, Any
 import requests
+from requests import Request
+from requests.exceptions import RequestException
 
 import pandas as pd
 
 from .base import BaseAPIInterface
 from .constants import BIOGRID
-from .utils import get_nested
+from .utils import get_nested, validate_parameters
 
 # Rest documentation: https://wiki.thebiogrid.org/doku.php/biogridrest
 
@@ -26,24 +28,30 @@ METHODS = [
 # gives an error:
 # Error fetching data for {...}: Extra data: line 1 column 8 (char 7). Tried URL: https://webservice.thebiogrid.org/interactions?accessKey={ACCESS_KEY}&geneList=1148170|1148186|112090&searchBiogridIds=True&format=tab2
 # This error will go to a low priority issue, as it is not as used as the JSON format.
-query_params_base = {
-    "accessKey": (None, "string", "Your BioGRID access key"),
-    "id": (None, "string", "BioGRID interaction ID to filter results"),
-    "start": (0, "integer", "Start index for pagination"),
-    "max": (10000, "integer", "Maximum number of results to return"),
-    "interSpeciesExclude": (False, "boolean", "Include interactions between different species"),
-    "selfInteractionsExclude": (False, "boolean", "If ‘true’, interactions with one interactor will be excluded"),
-    "evidenceList" : (None, "string", "Comma-separated list of evidence codes to filter results"),
-    "includeEvidence" : (False, "boolean", "If ‘true’, evidence codes will be included in the results"),
-    "geneList" : (None, "string", "List of gene names to filter results."),
-    "searchBiogridIds" : (False, "boolean", "If ‘true’, the interactor BIOGRID_ID will be examined for a match with the geneList."),
-    "taxId" : (None, "string", "Taxonomy ID of the organism to filter results. If not provided, all organisms will be included."),
-    "searchIds" : (False, "boolean", "If ‘true’, the interactor ENTREZ_GENE, ORDERED LOCUS and SYSTEMATIC_NAME (orf) will be examined for a match with the geneList."),
-    "format" : ("json", "string", "Format of the response. Options are 'tab1','tab2', 'extendedTab2', 'count', 'json', 'jsonExtended'. Default is 'json'."),
-}
-
-
 class BioGRIDInterface(BaseAPIInterface):
+    METHODS = {
+        "interactions": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "accessKey": (str, None, False),
+                "id": (str, None, True),
+                "start": (int, 0, True),
+                "max": (int, 10000, True),
+                "interSpeciesExclude": (bool, False, True),
+                "selfInteractionsExclude": (bool, False, True),
+                "evidenceList": (str, None, True),
+                "includeEvidence": (bool, False, True),
+                "geneList": (str, None, True),
+                "searchBiogridIds": (bool, False, False),
+                "taxId": (str, "All", True),
+                "searchIds": (bool, False, False),
+                "format": (str, "json", False)
+            },
+            "group_queries": ["geneList"],
+            "separator": "|"
+        }
+    }
 
     def __init__(
             self,
@@ -80,11 +88,6 @@ class BioGRIDInterface(BaseAPIInterface):
         """
         return super().get_cache_ignore_keys().union({"accessKey"})
     
-    # Probably max is another key to use. If you want to cache the results with different max values, then you should not ignore it.
-    def get_subquery_match_keys(self) -> Set[str]:
-        return super().get_subquery_match_keys().union({"id", "geneList", "taxId"})
-
-    
     def fetch(self, query: Union[str, dict, list], *, method: str = "interactions", **kwargs):
         """
         Fetch data from the BioGRID API.
@@ -95,59 +98,18 @@ class BioGRIDInterface(BaseAPIInterface):
         Returns:
             any: response from the API.
         """
-        #method = kwargs.get("method", "interactions")
+        response = super()._do_request(query, method=method, api_url=BIOGRID.API_URL, **kwargs)
+        response = response.json() if isinstance(response, requests.models.Response) else response
+        match method:
+            case "interactions":
+                # Special case for BioGRID
+                if isinstance(response, dict) and all(str(key).isdigit() for key in response.keys()):
+                    # Convert to list of interactions
+                    response = list(response.values())
+            case _:
+                pass
 
-        if method not in METHODS:
-            raise ValueError(f"Method {method} is not supported. Supported methods are: {', '.join(METHODS)}.")
-        if not isinstance(query, dict):
-            raise ValueError("Query must be a dictionary with keys matching the query parameters.")
-
-        for key in query.keys():
-            if key not in query_params_base:
-                raise ValueError(f"Query parameter {key} is not supported. Supported parameters are: {', '.join(query_params_base.keys())}.")
-
-        # Generate url
-        url = f"{BIOGRID.API_URL}{method}"
-
-        if "id" in query.keys():
-            if isinstance(query["id"], str):
-                url += f"/{query["id"]}"
-            query.pop("id")  # Remove id from query to avoid duplication in URL
-        
-        url += "?"
-
-        for key, value in query.items():
-            if isinstance(value, List):
-                url += f"{key}=" + "|".join(value)  # Convert list to pipe-separated string
-            else:
-                url += f"{key}={str(value)}"
-
-            url += "&"
-
-        if "format" not in query.keys():
-            url += "format=json"
-        
-        try:
-            response = self.session.get(url)
-            self._delay()
-            response.raise_for_status()
-
-            r = response.json()
-
-            # Special case for BioGRID
-            if isinstance(r, dict) and all(str(key).isdigit() for key in r.keys()):
-                # Convert to list of interactions
-                r = list(r.values())
-
-            return r
-        except requests.exceptions.RequestException as e:
-            # If message has 400 Client Error: Bad Request for url probably didn't found a given taxId or geneList
-            if response.status_code == 400:
-                error_message = response.json().get("message", "Unknown error")
-                print(f"Gene or Taxonomy ID not found for {query}.")
-            else:
-                print(f"Error fetching data for {query}: {e}. Tried URL: {url}")
-            return {}
+        return response
 
     def parse(
             self,
@@ -234,8 +196,6 @@ class BioGRIDInterface(BaseAPIInterface):
         Example:
             - fetch_single(method="interactions", query={})
         Available methods: """ + ", ".join(METHODS) + "\n\n"
-        usage += "Query Parameters:\n"
-        usage += "\n".join([f"\t{key}: {value[0]} ({value[1]}) - {value[2]}" for key, value in query_params_base.items() if value[0] is not None])
         usage += "\n\nExample Query:\n"
         usage += """
         {

@@ -12,10 +12,6 @@ from .utils import get_nested, validate_parameters
 
 # Rest documentation: https://wiki.thebiogrid.org/doku.php/biogridrest
 
-METHODS = [
-    "interactions"
-]
-
 # TODO add more from docs
 # TODO ISSUES:
 # For some reason, running this query:
@@ -158,8 +154,8 @@ class BioGRIDInterface(BaseAPIInterface):
 
         if not access_key:
             raise ValueError("Access key must be provided to get dummy data.")
-        if method != "" and method not in METHODS:
-            raise ValueError(f"Method {method} is not supported. Supported methods are: {', '.join(METHODS)}.")
+        if method != "" and method not in self.METHODS.keys():
+            raise ValueError(f"Method {method} is not supported. Supported methods are: {', '.join(self.METHODS.keys())}.")
         dummy_results = {}
         query = {
             "accessKey": access_key,
@@ -176,7 +172,7 @@ class BioGRIDInterface(BaseAPIInterface):
                 parse=parse
             )
         else:
-            for method in METHODS:
+            for method in self.METHODS.keys():
                 dummy_results[method] = super().get_dummy(
                     query=query,
                     method=method,
@@ -195,7 +191,7 @@ class BioGRIDInterface(BaseAPIInterface):
         usage = """Usage: To fetch interactions, use the BioGRID API with the following parameters.
         Example:
             - fetch_single(method="interactions", query={})
-        Available methods: """ + ", ".join(METHODS) + "\n\n"
+        Available methods: """ + ", ".join(self.METHODS.keys()) + "\n\n"
         usage += "\n\nExample Query:\n"
         usage += """
         {

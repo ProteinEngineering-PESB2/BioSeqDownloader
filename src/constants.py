@@ -83,11 +83,23 @@ PANTHER = DBConfig(
     CONFIG_DIR=os.path.join(BASE_CONFIG_DIR, "panther")
 )
 
+PATHWAYCOMMONS = DBConfig(
+    API_URL="https://www.pathwaycommons.org/pc2/v2/",
+    CACHE_DIR=os.path.join(BASE_CACHE_DIR, "pathwaycommons"),
+    CONFIG_DIR=os.path.join(BASE_CONFIG_DIR, "pathwaycommons")
+)
+
 PDB = DBConfig(
     API_URL="https://data.rcsb.org/rest/v1/core/",
     STRUCTURE_URL="https://files.rcsb.org/download/",
     CACHE_DIR = os.path.join(BASE_CACHE_DIR, "pdb"),
     CONFIG_DIR= os.path.join(BASE_CONFIG_DIR, "pdb")
+)
+
+PRIDE = DBConfig(
+    API_URL="https://www.ebi.ac.uk/pride/ws/archive/v3/",
+    CACHE_DIR=os.path.join(BASE_CACHE_DIR, "pride"),
+    CONFIG_DIR=os.path.join(BASE_CONFIG_DIR, "pride")
 )
 
 PUBCHEM = DBConfig(

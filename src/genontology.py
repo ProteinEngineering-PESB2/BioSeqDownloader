@@ -1,20 +1,68 @@
 import os
 from typing import Optional, Union, List, Dict, Any
 import requests, random, time
+from requests import Request
+from requests.exceptions import RequestException
 
 import pandas as pd
 
 from .base import BaseAPIInterface
 from .constants import GENONTOLOGY
-from .utils import get_nested
+from .utils import get_nested, validate_parameters
 
-METHODS = {
-    "ontology-term": ["", "graph"],
-    "go": [""],
-    "bioentity-function": [""]
-}
+# METHODS = {
+#     "ontology-term": ["", "graph"],
+#     "go": [""],
+#     "bioentity-function": [""]
+# }
 
 class GenOntologyInterface(BaseAPIInterface):
+    METHODS = {
+        "ontology-term": {
+            "default": {
+                "http_method": "GET",
+                "path_param": None,
+                "parameters": {
+                    "goid": (str, None, True),
+                },
+                "group_queries": [None],
+                "separator": None
+            },
+            "graph": {
+                "http_method": "GET",
+                "path_param": None,
+                "parameters": {
+                    "goid": (str, None, True),
+                },
+                "group_queries": [None],
+                "separator": None
+
+            }
+        },
+        "go": {
+            "default": {
+                "http_method": "GET",
+                "path_param": None,
+                "parameters": {
+                    "goid": (str, None, True),
+                },
+                "group_queries": [None],
+                "separator": None
+            }
+        },
+        "bioentity-function": {
+            "default": {
+                "http_method": "GET",
+                "path_param": None,
+                "parameters": {
+                    "goid": (str, None, True),
+                },
+                "group_queries": [None],
+                "separator": None
+            }
+        }
+    }
+
     def __init__(
             self,
             cache_dir: Optional[str] = None,
@@ -52,30 +100,43 @@ class GenOntologyInterface(BaseAPIInterface):
         Returns:
             any: response from the API.
         """
-        method = kwargs.get("method", "ontology-term")  # Default method is 'ontology-term'
-        option = kwargs.get("option", "")
-    
-        if not isinstance(query, str):
-            raise ValueError("Query must be a string representing the ontology term (e.g., 'GO:0008150').")
+        if method not in self.METHODS.keys():
+            raise ValueError(f"Method '{method}' is not defined in the interface.")
+        option = kwargs.pop("option", "default")
 
-        if method not in METHODS.keys():
-                raise ValueError(f"Method {method} is not supported. Supported methods are: {', '.join(METHODS.keys())}.")
-        if option and option not in METHODS.get(method, []):
-            raise ValueError(f"Option {option} is not supported for method {method}. Supported options are: {', '.join(METHODS.get(method, []))}.")
+        http_method, _, parameters, inputs = self.initialize_method_parameters(query, method, self.METHODS, option=option, **kwargs)
 
-        url = f"{GENONTOLOGY.API_URL}{method.replace('-', '/')}/{query.upper().replace(':', '%3A')}" # Replace ':' with '%3A' for URL encoding
+        # Validate and clean parameters
+        try:
+            validated_params = validate_parameters(inputs, parameters)
+        except ValueError as e:
+            raise ValueError(f"Invalid parameters for method '{method}': {e}")
+        
+        
+        url = f"{GENONTOLOGY.API_URL}{method.replace('-', '/')}/"
+        for param in validated_params:
+            if param in validated_params:
+                url += f"{validated_params[param].upper().replace(':', '%3A')}"
 
-        if option:
+        if option and option != "default":
             url += f"/{option}"
 
+        response = Request(
+            url=url,
+            method=http_method,
+        )
+
+        prepared = self.session.prepare_request(response)
+        print(f"Prepared request: {prepared.url}")
+
         try:
-            response = self.session.get(url)
+            response = self.session.send(prepared)
             self._delay()
             response.raise_for_status()
+
             return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching data for {query} with method {method}: {e}")
-            return {}
+        except RequestException as e:
+            raise RequestException(f"Error fetching data from {url}: {e}")
 
     def parse(
             self,
@@ -107,22 +168,7 @@ class GenOntologyInterface(BaseAPIInterface):
             raise ValueError("Response must be a requests.Response object or a dictionary.")
         
         parsed = self._extract_fields(data, fields_to_extract)
-        # parsed = {}
 
-        # if fields_to_extract is None:
-        #     parsed = get_nested(data, "")
-
-        # elif isinstance(fields_to_extract, list):
-        #     for key in fields_to_extract:
-        #         parsed[key] = get_nested(data, key)
-
-        # elif isinstance(fields_to_extract, dict):
-        #     for new_key, nested_path in fields_to_extract.items():
-        #         parsed[new_key] = get_nested(data, nested_path)
-        # else:
-        #     raise ValueError("fields_to_extract must be a list or a dictionary.")
-
-        # Get related gen ontology terms if requested
         if look_for_relationships:
             if isinstance(parsed, list):
                 parsed = [self.fetch_related_ontology_terms(item) for item in parsed]
@@ -171,14 +217,24 @@ class GenOntologyInterface(BaseAPIInterface):
         if method:
             dummy_results = super().get_dummy(query=query, method=method, **kwargs)
         else:
-            for method in METHODS.keys():
-                for option in METHODS[method]:
+            for method in self.METHODS.keys():
+                for option in self.METHODS[method]:
                         dummy_results[
                             f"{method}_{option}" if option else method
                         ] = super().get_dummy(query=query, method=method, option=option, **kwargs)
 
-        return dummy_results 
+        return dummy_results
     
+    # Patch Solution
+    def fetch_single(self, query: Union[str, dict], parse: bool = False, *args, **kwargs) -> Union[List, Dict, pd.DataFrame]:
+        option = kwargs.pop("option", "default")
+        return super().fetch_single(query=query, parse=parse, option=option, *args, **kwargs)
+    
+    # Patch Solution
+    def fetch_batch(self, queries: List[Union[str, dict]], parse: bool = False, *args, **kwargs) -> Union[List, pd.DataFrame]:
+        option = kwargs.pop("option", "default")
+        return super().fetch_batch(queries=queries, parse=parse, option=option, *args, **kwargs)
+
     def query_usage(self) -> str:
         return (
             "GenOntology API allows you to fetch ontology terms and their relationships.\n"

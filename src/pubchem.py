@@ -16,46 +16,58 @@ from .utils import validate_parameters
 # Falta Pwaccs de gene
 OPTIONS = {
     "protein": ["summary", "aids", "concise", "pwaccs"],
-    "compound": [ "record", "synonyms", "sids", "cids", "aids", "assaysummary", "description"],
+    "compound": ["default", "record", "synonyms", "sids", "cids", "aids", "assaysummary", "description"],
     "gene": ["summary","aids","concise","pwaccs"]
+}
+
+COMPOUND_TEMPLATE = {
+    "http_method": "GET",
+    "path_param": None,
+    "parameters": {
+        "cid": (str, None, True),
+        "name": (str, None, True),
+        "smiles": (str, None, True),
+        "property": (str, None, True),
+    },
+    "group_queries": ["cid", "property"],
+    "separator": ","
+}
+
+PROTEIN_TEMPLATE = {
+    "http_method": "GET",
+    "path_param": None,
+    "parameters": {
+        "accession": (str, None, True),
+    },
+    "group_queries": [None],
+    "separator": None 
+}
+
+GENE_TEMPLATE = {
+    "http_method": "GET",
+    "path_param": None,
+    "parameters": {
+        "genesymbol": (str, None, True),
+        "geneid": (str, None, True),
+        "synonym": (str, None, True),
+        "taxid": (str, None, True),
+    },
+    "group_queries": ["genesymbol"],
+    "separator": ","
 }
 
 class PubChemInterface(BaseAPIInterface):
     METHODS = {
         "compound": {
-            "http_method": "GET",
-            "path_param": None,
-            "parameters": {
-                "cid": (str, None, True),
-                "name": (str, None, True),
-                "smiles": (str, None, True),
-                "property": (str, None, True),
-            },
-            "group_queries": ["cid", "property"],
-            "separator": ","
+            **{k: COMPOUND_TEMPLATE for k in OPTIONS["compound"]},
         },
         "protein": {
-            "http_method": "GET",
-            "path_param": None,
-            "parameters": {
-                "accession": (str, None, True),
-            },
-            "group_queries": [None],
-            "separator": None 
+            **{k: PROTEIN_TEMPLATE for k in OPTIONS["protein"]},
         },
         "gene": {
-            "http_method": "GET",
-            "path_param": None,
-            "parameters": {
-                "genesymbol": (str, None, True),
-                "geneid": (str, None, True),
-                "synonym": (str, None, True),
-                "taxid": (str, None, True),
-            },
-            "group_queries": ["genesymbol"],
-            "separator": ","
+            **{k: GENE_TEMPLATE for k in OPTIONS["gene"]},
         }
-}
+    }   
 
     def __init__(
             self,  
@@ -93,8 +105,9 @@ class PubChemInterface(BaseAPIInterface):
 
         http_method, path_param, parameters, inputs = self.initialize_method_parameters(query, method, self.METHODS, **kwargs)
 
-        if option and inputs.get("property"):
-            raise ValueError("Cannot specify both 'option' and 'property' parameter. Please choose one.")
+        if option and option != "default" and inputs.get("property"):
+             print(option)
+             raise ValueError("Cannot specify both 'option' and 'property' parameter. Please choose one.")
 
         # Validate and clean parameters
         try:
@@ -122,7 +135,7 @@ class PubChemInterface(BaseAPIInterface):
         for key, value in validated_params.items():
             url += f"/{key}/{value}"
         
-        if option:
+        if option and option != "default":
             url += f"/{option}"
         url += "/json"  # Assuming JSON output for simplicity
 
@@ -203,6 +216,16 @@ class PubChemInterface(BaseAPIInterface):
 
         return self._extract_fields(data, fields_to_extract)
     
+    # Patch Solution
+    def fetch_single(self, query: Union[str, dict], parse: bool = False, *args, **kwargs) -> Union[List, Dict, pd.DataFrame]:
+        option = kwargs.pop("option", "default")
+        return super().fetch_single(query=query, parse=parse, option=option, *args, **kwargs)
+    
+    # Patch Solution
+    def fetch_batch(self, queries: List[Union[str, dict]], parse: bool = False, *args, **kwargs) -> Union[List, pd.DataFrame]:
+        option = kwargs.pop("option", "default")
+        return super().fetch_batch(queries=queries, parse=parse, option=option, *args, **kwargs)
+
     def get_dummy(self, **kwargs) -> Dict:
         return {
             "message": "This is a dummy response.",

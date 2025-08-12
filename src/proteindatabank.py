@@ -1,18 +1,33 @@
 import os
 import requests
 from typing import Optional, Union, List, Dict, Any
+from requests import Request
+from requests.exceptions import RequestException
 
 import pandas as pd
 
 from .base import BaseAPIInterface
 
 from .constants import PDB
-from .utils import get_nested
+from .utils import get_nested, validate_parameters
 
 # Check https://data.rcsb.org/rest/v1/core/entry/4HHB for more attributes
 # rcsbapi package usage tutorial at: https://pdb101.rcsb.org/train/training-events/apis-python
 
 class PDBInterface(BaseAPIInterface):
+    METHODS = {
+        "entry": {
+            "http_method": "GET",
+            "path_param": "id",
+            "parameters": {
+                "id": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        }
+    }
+
+
     def __init__(
             self,
             batch_size: int = 5000, 
@@ -61,16 +76,41 @@ class PDBInterface(BaseAPIInterface):
         Returns:
             dict: Fetched data for the given PDB ID.
         """
-        url = f"{PDB.API_URL}{method}/{query}"
+        if method not in self.METHODS.keys():
+            raise ValueError(f"Method '{method}' is not defined in the interface.")
         
+        http_method, path_param, parameters, inputs = self.initialize_method_parameters(query, method, self.METHODS, **kwargs)
+
+        # Validate and clean parameters
         try:
-            response = self.session.get(url)
+            validated_params = validate_parameters(inputs, parameters)
+        except ValueError as e:
+            raise ValueError(f"Invalid parameters for method '{method}': {e}")
+        
+        url = f"{PDB.API_URL}{method}"
+        
+        if path_param:
+            if isinstance(path_param, list):
+                url += "/" + "/".join(str(validated_params.pop(param)) for param in path_param if param in validated_params)
+            else:
+                url += f"/{validated_params.pop(path_param)}"
+
+        response = Request(
+            url=url,
+            method=http_method,
+        )
+        
+        prepared = self.session.prepare_request(response)
+        print(f"Prepared request: {prepared.url}")
+
+        try:
+            response = self.session.send(prepared)
             self._delay()
             response.raise_for_status()
+
             return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching prediction for {query}: {e}")
-            return {}
+        except RequestException as e:
+            raise RequestException(f"Error fetching data from {url}: {e}")
         
     def fetch_structure(self, pdb_id: str, file_format: str = "pdb") -> str:
         """
@@ -154,6 +194,7 @@ class PDBInterface(BaseAPIInterface):
 
         return super().get_dummy(
             query="4HHB",
+            method="entry",
             parse=parse
         )
     

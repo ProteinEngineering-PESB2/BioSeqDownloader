@@ -14,63 +14,73 @@ from .utils import validate_parameters, get_primary_keys
 
 # Definition of methods for ChEBI API
 # Each paramether is a tuple with (type, default_value, primary_key)
-METHODS = {
-    "compound": {
-        "http_method": "GET",
-        "path_param": "chebi_id",
-        "parameters": {
-            "chebi_id": (str, None, True),
-            "only_ontology_parents": (bool, False, False),
-            "only_ontology_children": (bool, False, False)
-        }
-    },
-    "compounds": {
-        "http_method": "GET",
-        "path_param": None,
-        "parameters": {
-            "chebi_ids": (list, None, True),
-        }
-    },
-    "es_search": {
-        "http_method": "GET",
-        "path_param": None,
-        "parameters": {
-            "term": (str, None, True),
-            "page": (int, 1, False),
-            "size": (int, 15, False),
-        }
-    },
-    "children": {
-        "http_method": "GET",
-        "path_param": "chebi_id",
-        "parameters": {
-            "chebi_id": (str, None, True),
-        }
-    },
-    "parents": {
-        "http_method": "GET",
-        "path_param": "chebi_id",
-        "parameters": {
-            "chebi_id": (str, None, True),
-        }
-    },
-    # Not implemented yet, requires pagination handling
-    # "structure_search": {
-    #     "http_method": "GET",
-    #     "path_param": None,
-    #     "parameters": {
-    #         "smiles": (str, None, True),
-    #         "search_type": (str, "connectivity", False),
-    #         "similarity": (float, 0.7, False),
-    #         "three_star_only": (bool, True, False),
-    #         "page": (int, 1, False),
-    #         "size": (int, 15, False),
-    #         "download": (bool, False, False)
-    #     }
-    # }
-}
 
 class ChEBIInterface(BaseAPIInterface):
+    METHODS = {
+        "compound": {
+            "http_method": "GET",
+            "path_param": "chebi_id",
+            "parameters": {
+                "chebi_id": (str, None, True),
+                "only_ontology_parents": (bool, False, False),
+                "only_ontology_children": (bool, False, False)
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        "compounds": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "chebi_ids": (list, None, True),
+            },
+            "group_queries": [None],
+            "separator": ","
+        },
+        "es_search": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "term": (str, None, True),
+                "page": (int, 1, False),
+                "size": (int, 15, False),
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        "ontology-children": {
+            "http_method": "GET",
+            "path_param": "chebi_id",
+            "parameters": {
+                "chebi_id": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        "ontology-parents": {
+            "http_method": "GET",
+            "path_param": "chebi_id",
+            "parameters": {
+                "chebi_id": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        # Not implemented yet, requires pagination handling
+        # "structure_search": {
+        #     "http_method": "GET",
+        #     "path_param": None,
+        #     "parameters": {
+        #         "smiles": (str, None, True),
+        #         "search_type": (str, "connectivity", False),
+        #         "similarity": (float, 0.7, False),
+        #         "three_star_only": (bool, True, False),
+        #         "page": (int, 1, False),
+        #         "size": (int, 15, False),
+        #         "download": (bool, False, False)
+        #     }
+        # }
+    }
     def __init__(
             self,  
             cache_dir: Optional[str] = None,
@@ -91,12 +101,6 @@ class ChEBIInterface(BaseAPIInterface):
         self.output_dir = output_dir or cache_dir
         os.makedirs(self.output_dir, exist_ok=True)
 
-    # def get_cache_ignore_keys(self) -> Set[str]:
-    #     return super().get_cache_ignore_keys().union({"ID_TO_IGNORE", "ID2_TO_IGNORE"})
-    
-    # def get_subquery_match_keys(self) -> Set[str]:
-    #     return super().get_subquery_match_keys().union({"KEY_TO_MATCH", "ANOTHER_KEY_TO_MATCH"})
-
     def fetch(
             self, 
             query: Union[str, dict, list], 
@@ -104,39 +108,13 @@ class ChEBIInterface(BaseAPIInterface):
             method: str = "compound", 
             **kwargs
         ):
-        if method not in METHODS.keys():
-            raise ValueError(f"Method {method} is not supported. Available methods: {list(METHODS.keys())}")
-        
-        method_info = METHODS[method]
-        http_method = method_info["http_method"]
-        path_param = method_info["path_param"]
-        fields = method_info["parameters"]
-        
-        primary_keys = get_primary_keys(fields)
-        if not primary_keys:
-            raise ValueError(f"No primary keys defined for method '{method}'. Please check the method definition.")
-        
-        if len(primary_keys) > 1 and not isinstance(query, dict):
-            raise ValueError(f"Query must be a dictionary when multiple primary keys are defined for method '{method}'. "
-                             f"Received: {type(query)} with value {query}")
+        if method not in self.METHODS.keys():
+            raise ValueError(f"Method {method} is not supported. Available methods: {list(self.METHODS.keys())}")
 
-        inputs = {}
-        if isinstance(query, (dict)):
-            inputs.update(query)
-        elif isinstance(query, list):
-            inputs.update({primary_keys[0]: query} if primary_keys else {})
-        elif isinstance(query, str):
-            inputs[primary_keys[0]] = query
-        else:
-            raise ValueError(f"Query must be a string, list or dictionary. Received: {type(query)}")
-        
-        # Add kwargs to inputs
-        inputs.update(kwargs)
+        http_method, path_param, parameters, inputs = self.initialize_method_parameters(query, method, self.METHODS, **kwargs)
 
-        print(inputs)
-        # Validate and clean parameters
         try:
-            validated_params = validate_parameters(inputs, fields)
+            validated_params = validate_parameters(inputs, parameters)
         except (ValueError, TypeError) as e:
             raise ValueError(f"Parameter validation failed: {e}")
 
@@ -153,22 +131,23 @@ class ChEBIInterface(BaseAPIInterface):
 
             validated_params[id_key] = ",".join(id for id in chebi_ids)
         
+
         # Make URL
-        url = f"{CHEBI.API_URL}{method}/"
+        url = f"{CHEBI.API_URL}{method.replace('-', '/')}/"
         if path_param and path_param in validated_params:
             path_value = validated_params.pop(path_param)
+            if path_param == "chebi_id":
+                path_value = quote(path_value, safe="")
             url += f"{path_value}"
-
-        # Prepare request
+        
         req = Request(http_method, url, params=validated_params)
         prepared = self.session.prepare_request(req)
 
+        print(f"Prepared url: {prepared.url}")
         try:
-            # TODO Check send usage
             response = self.session.send(prepared)
             self._delay()
             response.raise_for_status()
-
             try:
                 response = json.loads(response.text)
             except json.JSONDecodeError:
@@ -179,6 +158,9 @@ class ChEBIInterface(BaseAPIInterface):
             if isinstance(response, dict) and set(response.keys()) <= set(chebi_ids):
                 # Convert to list of interactions
                 response = list(response.values())
+
+            if isinstance(response, dict) and "results" in response.keys():
+                response = response["results"]
 
             return response
         except RequestException as e:

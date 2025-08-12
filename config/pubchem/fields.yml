@@ -1,5 +1,5 @@
 compound:
-  properties:
+  default:
     cid: CID
     molecular_formula: MolecularFormula
     molecular_weight: MolecularWeight
@@ -70,6 +70,8 @@ compound:
   aids:
     cid: CID
     aid: AID
+  cids:
+    cid: CID
   assaysummary:
     aid: AID
     panel_member_id: Panel Member ID

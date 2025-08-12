@@ -1,5 +1,7 @@
 import os, time, random
 from typing import Optional, List, Dict, Any, Union
+from requests import Request, Response
+from requests.exceptions import RequestException
 import hashlib
 from zeep import Client
 from zeep.helpers import serialize_object
@@ -7,23 +9,189 @@ from zeep.helpers import serialize_object
 
 from .base import BaseAPIInterface
 from .constants import BRENDA
+from .utils import validate_parameters
 
 # For aditional implementations see: https://www.brenda-enzymes.org/soap.php
-methods = {
-    'getKmValue': ["ecNumber", "kmValue", "kmValueMaximum", "substrate", "commentary", "organism", "ligandStructureId", "literature"],
-    'getIc50Value': ["ecNumber", "ic50Value", "ic50ValueMaximum", "inhibitor", "commentary", "organism", "ligandStructureId", "literature"],
-    'getKcatKmValue': ["ecNumber", "kcatKmValue", "kcatKmValueMaximum", "substrate", "commentary", "organism", "ligandStructureId", "literature"],
-    'getKiValue': ["ecNumber", "kiValue", "kiValueMaximum", "inhibitor", "commentary", "organism", "ligandStructureId", "literature"],
-    'getPhRange': ["ecNumber", "phRange", "phRangeMaximum", "commentary", "organism", "literature"],
-    'getPhOptimum': ["ecNumber", "phOptimum", "phOptimumMaximum", "commentary", "organism", "literature"],
-    'getPhStability': ["ecNumber", "phStability", "phStabilityMaximum", "commentary", "organism", "literature"],
-    'getCofactor': ["ecNumber", "cofactor", "commentary", "organism", "ligandStructureId", "literature"],
-    'getTemperatureOptimum': ["ecNumber", "temperatureOptimum", "temperatureOptimumMaximum", "commentary", "organism", "literature"],
-    'getTemperatureStability': ["ecNumber", "temperatureStability", "temperatureStabilityMaximum", "commentary", "organism", "literature"],
-    'getTemperatureRange': ["ecNumber", "temperatureRange", "temperatureRangeMaximum", "commentary", "organism", "literature"]
-}
+# methods = {
+#     'getKmValue': ["ecNumber", "kmValue", "kmValueMaximum", "substrate", "commentary", "organism", "ligandStructureId", "literature"],
+#     'getIc50Value': ["ecNumber", "ic50Value", "ic50ValueMaximum", "inhibitor", "commentary", "organism", "ligandStructureId", "literature"],
+#     'getKcatKmValue': ["ecNumber", "kcatKmValue", "kcatKmValueMaximum", "substrate", "commentary", "organism", "ligandStructureId", "literature"],
+#     'getKiValue': ["ecNumber", "kiValue", "kiValueMaximum", "inhibitor", "commentary", "organism", "ligandStructureId", "literature"],
+#     'getPhRange': ["ecNumber", "phRange", "phRangeMaximum", "commentary", "organism", "literature"],
+#     'getPhOptimum': ["ecNumber", "phOptimum", "phOptimumMaximum", "commentary", "organism", "literature"],
+#     'getPhStability': ["ecNumber", "phStability", "phStabilityMaximum", "commentary", "organism", "literature"],
+#     'getCofactor': ["ecNumber", "cofactor", "commentary", "organism", "ligandStructureId", "literature"],
+#     'getTemperatureOptimum': ["ecNumber", "temperatureOptimum", "temperatureOptimumMaximum", "commentary", "organism", "literature"],
+#     'getTemperatureStability': ["ecNumber", "temperatureStability", "temperatureStabilityMaximum", "commentary", "organism", "literature"],
+#     'getTemperatureRange': ["ecNumber", "temperatureRange", "temperatureRangeMaximum", "commentary", "organism", "literature"]
+# }
 
 class BrendaInstance(BaseAPIInterface):
+    METHODS = {
+        "getKmValue": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "ecNumber": (str, None, True),
+                "kmValue": (str, None, True),
+                "kmValueMaximum": (str, None, True),
+                "substrate": (str, None, True),
+                "commentary": (str, None, True),
+                "organism": (str, None, True),
+                "ligandStructureId": (str, None, True),
+                "literature": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        "getIc50Value": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "ecNumber": (str, None, True),
+                "ic50Value": (str, None, True),
+                "ic50ValueMaximum": (str, None, True),
+                "inhibitor": (str, None, True),
+                "commentary": (str, None, True),
+                "organism": (str, None, True),
+                "ligandStructureId": (str, None, True),
+                "literature": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        "getKcatKmValue": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "ecNumber": (str, None, True),
+                "kcatKmValue": (str, None, True),
+                "kcatKmValueMaximum": (str, None, True),
+                "substrate": (str, None, True),
+                "commentary": (str, None, True),
+                "organism": (str, None, True),
+                "ligandStructureId": (str, None, True),
+                "literature": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        "getKiValue": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "ecNumber": (str, None, True),
+                "kiValue": (str, None, True),
+                "kiValueMaximum": (str, None, True),
+                "inhibitor": (str, None, True),
+                "commentary": (str, None, True),
+                "organism": (str, None, True),
+                "ligandStructureId": (str, None, True),
+                "literature": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        "getPhRange": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "ecNumber": (str, None, True),
+                "phRange": (str, None, True),
+                "phRangeMaximum": (str, None, True),
+                "commentary": (str, None, True),
+                "organism": (str, None, True),
+                "literature": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        "getPhOptimum": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "ecNumber": (str, None, True),
+                "phOptimum": (str, None, True),
+                "phOptimumMaximum": (str, None, True),
+                "commentary": (str, None, True),
+                "organism": (str, None, True),
+                "literature": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        "getPhStability": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "ecNumber": (str, None, True),
+                "phStability": (str, None, True),
+                "phStabilityMaximum": (str, None, True),
+                "commentary": (str, None, True),
+                "organism": (str, None, True),
+                "literature": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        "getCofactor": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "ecNumber": (str, None, True),
+                "cofactor": (str, None, True),
+                "commentary": (str, None, True),
+                "organism": (str, None, True),
+                "ligandStructureId": (str, None, True),
+                "literature": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        "getTemperatureOptimum": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "ecNumber": (str, None, True),
+                "temperatureOptimum": (str, None, True),
+                "temperatureOptimumMaximum": (str, None, True),
+                "commentary": (str, None, True),
+                "organism": (str, None, True),
+                "literature": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        "getTemperatureStability": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "ecNumber": (str, None, True),
+                "temperatureStability": (str, None, True),
+                "temperatureStabilityMaximum": (str, None, True),
+                "commentary": (str, None, True),
+                "organism": (str, None, True),
+                "literature": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        "getTemperatureRange": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "ecNumber": (str, None, True),
+                "temperatureRange": (str, None, True),
+                "temperatureRangeMaximum": (str, None, True),
+                "commentary": (str, None, True),
+                "organism": (str, None, True),
+                "literature": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        }
+    }
+
     def __init__(
             self, 
             email: str, 
@@ -77,20 +245,28 @@ class BrendaInstance(BaseAPIInterface):
         Returns:
             list: List of results from the BRENDA API.
         """
-        if method not in methods:
-            print(f"method {method} is not supported. Available methods: {list(methods.keys())}")
+        if method not in self.METHODS.keys():
+            print(f"method {method} is not supported. Available methods: {list(self.METHODS.keys())}")
             return []
         if not isinstance(query, dict):
             print("Query must be a dictionary with keys matching the method parameters.")
             return []
         
+        _, _, parameters, inputs = self.initialize_method_parameters(query, method, self.METHODS, **kwargs)
+
+        # Validate and clean parameters
+        try:
+            validated_params = validate_parameters(inputs, parameters)
+        except ValueError as e:
+            raise ValueError(f"Invalid parameters for method '{method}': {e}")
+
+
         results = []
         try:
-            # Get the fields required for this function
-            field_names = methods[method]
+            params = self.METHODS[method]["parameters"].keys()
 
             # Build parameters in order
-            param_list = [f"{key}*{query.get(key, '')}" for key in field_names]
+            param_list = [f"{k}*{validated_params.get(k, '')}" for k in params]
 
             # Add credentials
             parameters = [self.email, self.password] + param_list
@@ -109,6 +285,7 @@ class BrendaInstance(BaseAPIInterface):
             return []
         
         return results
+
     
     def get_dummy(self, *, method: Optional[str] = None, **kwargs) -> dict:
         """
@@ -137,7 +314,7 @@ class BrendaInstance(BaseAPIInterface):
         if method:
             dummy_results[method] = super().get_dummy(query=query, method=method, **kwargs)
         else:
-            for method in methods.keys():
+            for method in self.METHODS.keys():
                 dummy_results[method] = super().get_dummy(query=query, method=method, **kwargs)
         return dummy_results
     
@@ -147,8 +324,8 @@ class BrendaInstance(BaseAPIInterface):
         Returns:
             List[str]: List of method names.
         """
-        return list(methods.keys())
-    
+        return list(self.METHODS.keys())
+
     def query_usage(self) -> str:
         """
         Get the usage of the BRENDA API.
@@ -158,7 +335,7 @@ class BrendaInstance(BaseAPIInterface):
         usage = """Usage: To fetch data from BRENDA, use the following parameters.
         Example:
             - fetch(query={}, methods=["getKmValue", "getIc50Value"])
-        Available methods: """ + ", ".join(methods.keys()) + "\n\n"
+        Available methods: """ + ", ".join(self.METHODS.keys()) + "\n\n"
         usage += "For more information about each method, please refer to the BRENDA documentation."
         usage += "\nOr use `show_method({method_name})` to see the parameters required for each method."
         return usage
@@ -172,10 +349,10 @@ class BrendaInstance(BaseAPIInterface):
         Returns:
             str: Parameters required for the method.
         """
-        if method_name not in methods:
+        if method_name not in self.METHODS.keys():
             return f"method {method_name} is not supported."
-        
-        params = methods[method_name]
+
+        params = self.METHODS[method_name]
         return f"Parameters for {method_name}: {', '.join(params)}"
     
     def parse(self, data: Any, fields_to_extract: Optional[Union[list, dict]], **kwargs):

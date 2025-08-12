@@ -240,7 +240,12 @@ class BaseAPIInterface(ABC):
         Automatically checks if any value in kwargs or combination like f"{value}_{mode}" matches a known config key.
         """
         fields_config = self.get_config("fields") if self.use_config else {}
+
+        if not fields_config:
+            return None
+
         known_keys = set(fields_config.keys())
+
         method = kwargs.get("method", "NOT_GIVEN")
 
         values = [method]
@@ -300,11 +305,17 @@ class BaseAPIInterface(ABC):
     ##################
     # Methods to handle complex queries and making subqueries using METHODS
     ##################
-    
-    def _get_method_spec(self, method: str) -> Dict[str, Any]:
+
+    def _get_method_spec(self, **kwargs) -> Dict[str, Any]:
+        method = kwargs.get("method", None)
         if method not in self.METHODS:
             raise ValueError(f"Unknown method '{method}'")
-        return self.METHODS[method]
+        option = kwargs.get("option", None)
+
+        if option:
+            return self.METHODS[method].get(option, {}) 
+        else:
+            return self.METHODS[method]
 
     def _prepare_params(self, query, spec, **overrides) -> dict:
         """
@@ -356,8 +367,20 @@ class BaseAPIInterface(ABC):
     def initialize_method_parameters(self, query: Union[str, dict, list], method: str, method_definition: dict, **kwargs):
         if method not in method_definition:
             raise ValueError(f"Method '{method}' is not defined in the method definition. Available methods: {list(method_definition.keys())}")
+       
+        option = kwargs.get("option") if "option" in kwargs else None
+
+        method_info = method_definition.get(method, {})
+
+        if option and option not in method_info.keys():
+            raise ValueError(f"Option '{option}' is not valid for method '{method}'. Allowed options: {method_info.keys()}")
+
+        method_info = method_info.get(option, {}) if option else method_info
+
+        # Redundant
+        #if not all(k in method_info.keys() for k in ["http_method", "path_param", "parameters", "group_queries", "separator"]):
+        #    raise ValueError(f"Method '{method}' with option '{option}' is not defined correctly in the method definition. Defined method: {method_info.keys()}")
         
-        method_info = method_definition[method]
         http_method = method_info["http_method"]
         path_param = method_info["path_param"]
         parameters = method_info["parameters"]
@@ -384,6 +407,7 @@ class BaseAPIInterface(ABC):
                 for key in group_queries:
                     if key in query and isinstance(query[key], list):
                         inputs[key] = separator.join(query[key])
+                        print(f"Joined {key} with separator '{separator}': {inputs[key]}")
                     # TODO Changed else for elif, check
                     elif key in query:
                         inputs[key] = query.get(key, "")
@@ -403,7 +427,7 @@ class BaseAPIInterface(ABC):
         
         # Probably this line is not needed. All inputs should be in the query 
         # TODO TRY IF IN OTHER APIS THIS CHANGE MAKE ERRORS
-        #inputs.update([(k, v) for k, v in kwargs.items() if k not in self.get_cache_ignore_keys()])
+        # inputs.update([(k, v) for k, v in kwargs.items() if k not in self.get_cache_ignore_keys()])
 
         return http_method, path_param, parameters, inputs
     
@@ -430,7 +454,7 @@ class BaseAPIInterface(ABC):
         else:
             return False
 
-    def decompose_query(self, query: dict, method: str) -> Optional[List[Tuple[str, dict]]]:
+    def decompose_query(self, query: dict, method: str, option: str) -> Optional[List[Tuple[str, dict]]]:
         """
         Decompose a query into multiple subqueries if any of the identity keys contain lists.
         Returns:
@@ -438,9 +462,12 @@ class BaseAPIInterface(ABC):
         """
         if method not in self.METHODS:
             raise ValueError(f"Method '{method}' is not supported. Available methods: {list(self.METHODS.keys())}")
-        
-        param_spec = self.METHODS[method].get("parameters", {})
-        group_queries = self.METHODS[method].get("group_queries", [])
+        if option and option not in self.METHODS[method]:
+            raise ValueError(f"Option '{option}' is not valid for method '{method}'. Allowed options: {self.METHODS[method].keys()}")
+
+        method_spec = self.METHODS[method].get(option, self.METHODS[method])
+        param_spec = method_spec.get("parameters", {})
+        group_queries = method_spec.get("group_queries", [])
 
         # Identify ID keys
         keys = [k for k, (_, _, is_id) in param_spec.items() if is_id and k in query]
@@ -450,8 +477,8 @@ class BaseAPIInterface(ABC):
             return [] # No decomposition needed
         
         # Collect values for product
-        value_combinations = list(itertools.product(*(query[k] for k in group_queries)))
-        
+        value_combinations = list(itertools.product(*(query[k] for k in group_queries if k in query and isinstance(query[k], list))))
+
         subqueries = []
         for combo in value_combinations:
             subquery = query.copy()
@@ -650,9 +677,10 @@ class BaseAPIInterface(ABC):
         # Extract flags and avoid passing twice to _maybe_parse
         to_dataframe = kwargs.pop("to_dataframe", False)
         method       = kwargs.get("method", "NOT_GIVEN")
+        option       = kwargs.get("option", None)
         
         # Get method specification
-        spec = self._get_method_spec(method)
+        spec = self._get_method_spec(**kwargs)
         if spec is None:
             raise ValueError(f"Method '{method}' is not supported. Available: {list(self.METHODS)}")
         group_key = spec.get('group_queries', [None])[0] 
@@ -662,7 +690,7 @@ class BaseAPIInterface(ABC):
             results = {}
             remaining = []
             # values = list(query[group_key])
-            subqueries = self.decompose_query(query, method)
+            subqueries = self.decompose_query(query, method, option)
             # Check cache per individual
             for identifier, subq in subqueries:
                 cache_key = self._make_cache_key(identifier, **kwargs)
@@ -724,7 +752,8 @@ class BaseAPIInterface(ABC):
         Returns:
             List: List of fetched data, parsed if requested.
         """
-        method = kwargs.get("method", "NOT_GIVEN")
+        method       = kwargs.get("method", "NOT_GIVEN")
+        option       = kwargs.get("option", None)
         results: List[Any] = []
 
         # Separate queries in cache and not in cache
@@ -736,7 +765,7 @@ class BaseAPIInterface(ABC):
         ###############################
         for i, query in enumerate(queries):
             if isinstance(query, dict):
-                subqueries = self.decompose_query(query, method)
+                subqueries = self.decompose_query(query, method, option)
             elif isinstance(query, list) and all(isinstance(q, str) for q in query):
                 subqueries = [(q, {"identifiers": [q]}) for q in query]
             else:
@@ -779,8 +808,9 @@ class BaseAPIInterface(ABC):
             for future in future_to_index:
                 i = future_to_index[future]
                 try:
-                    result = future.result()
-                    results[i] = result
+                    #result = future.result()
+                    #results[i] = result
+                    results.append(future.result())
                 except Exception as e:
                     print(f"Error fetching query at index {i} ({queries[i]}): {e}")
                 self._delay()
@@ -810,7 +840,6 @@ class BaseAPIInterface(ABC):
             raise ValueError("Query must be provided to get dummy data.")
 
         response = self.fetch_single(query=query, parse=parse, *args, **kwargs)
-        print(f"type(response)={response}")
         if isinstance(response, list):
             return get_feature_keys(response[0] if response else {})
         elif isinstance(response, dict):
@@ -818,7 +847,7 @@ class BaseAPIInterface(ABC):
         else:
             raise ValueError("Response must be a list or a dictionary.")
 
-    def _extract_fields(self, data: Union[dict, list], fields_to_extract: Optional[Union[list, dict]] = None) -> Union[dict, list]:
+    def _extract_fields(self, data: Union[dict, list], fields_to_extract: Optional[Union[list, dict]] = None, **kwargs) -> Union[dict, list]:
         """
         Extract specified fields from the data.
         
@@ -830,6 +859,11 @@ class BaseAPIInterface(ABC):
         Returns:
             Union[dict, list]: Data with only the specified fields.
         """
+        option = kwargs.get("option", "default")
+
+        if option and isinstance(fields_to_extract, dict) and option in fields_to_extract.keys():
+            fields_to_extract = fields_to_extract[option]
+        
         parsed = {}
         if isinstance(fields_to_extract, List):
             if isinstance(data, List):

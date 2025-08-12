@@ -12,6 +12,36 @@ databases = [
 ]
 
 class RefSeqInterface(BaseAPIInterface):
+    METHODS = {
+        "protein": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "id": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        "gene": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "id": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        "popset": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "id": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        }
+    }
+
     def __init__(
             self,
             email: str = "",
@@ -75,7 +105,10 @@ class RefSeqInterface(BaseAPIInterface):
         if method not in databases:
             raise ValueError(f"Database '{method}' is not supported. Supported databases: {', '.join(databases)}")
 
-        handle = Entrez.efetch(db=method, id=query, retmode=retmode)
+
+        ids = query.get("id") if isinstance(query, dict) else query
+
+        handle = Entrez.efetch(db=method, id=ids, retmode=retmode)
         records = Entrez.read(handle)
         handle.close()
 

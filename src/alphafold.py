@@ -1,15 +1,29 @@
 import requests, os, json
 from typing import Union, List, Dict, Optional
+from requests import Request
+from requests.exceptions import RequestException
 
 import pandas as pd
 
 from .base import BaseAPIInterface
 from .constants import ALPHAFOLD
-from .utils import get_nested
+from .utils import get_nested, validate_parameters
 
 # TODO Test get_dummy
 
 class AlphafoldInterface(BaseAPIInterface):
+    METHODS = {
+        "prediction": {
+            "http_method": "GET",
+            "path_param": "qualifier",
+            "parameters": {
+                "qualifier": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        }
+    }
+
     def __init__(
             self,  
             structures: List[str] = ["pdb"],
@@ -44,6 +58,7 @@ class AlphafoldInterface(BaseAPIInterface):
         if not isinstance(query, str):
             raise ValueError("Query must be a string representing a UniProt ID.")
         
+
         result = super().fetch_single(query, parse=parse, *args, **kwargs)
 
         new_result = {}
@@ -85,22 +100,45 @@ class AlphafoldInterface(BaseAPIInterface):
         Returns:
             Dict: Prediction data.
         """
-        if method not in ["prediction"]:
+        if method not in self.METHODS.keys():
             raise ValueError(f"Method {method} is not supported. Supported methods are: prediction.")
 
-        if not isinstance(query, str) or not query:
-            raise ValueError("Query must be a string representing a UniProt ID.")
-        
-        url = f"{ALPHAFOLD.API_URL}{method}/{query}"
-        
+        http_method, path_param, parameters, inputs = self.initialize_method_parameters(query, method, self.METHODS, **kwargs)
+
+        # Validate and clean parameters
         try:
-            response = self.session.get(url)
+            validated_params = validate_parameters(inputs, parameters)
+        except ValueError as e:
+            raise ValueError(f"Invalid parameters for method '{method}': {e}")
+        
+        url = f"{ALPHAFOLD.API_URL}{method}/"
+        
+        if path_param:
+            path_value = validated_params.pop(path_param)
+            url += f"{path_value}"
+        
+        req = Request(
+            method=http_method,
+            url=url,
+            params=validated_params
+        )
+        prepared = self.session.prepare_request(req)
+        print(f"Prepared request: {prepared.url}")
+
+        try:
+            response = self.session.send(prepared)
             self._delay()
             response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
+            response = response.json()
+
+            if "results" in response:
+                response = response["results"]  
+
+            return response
+        except RequestException as e:
             print(f"Error fetching prediction for {query}: {e}")
             return {}
+        
 
     def download_structures(self, parsed: Dict) -> Dict:
         """

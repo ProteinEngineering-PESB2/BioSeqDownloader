@@ -13,3 +13,4 @@ dependencies:
     - zeep
     - dotenv
     - pyyaml
+    - beautifulsoup4

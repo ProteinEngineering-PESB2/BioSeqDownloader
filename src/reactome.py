@@ -5,6 +5,9 @@ from typing import Optional, Union, Any, Dict, List
 from .base import BaseAPIInterface
 from .constants import REACTOME
 
+# TODO - Need to review other methods besides data-discover
+# Also some of the code should be refracted...
+
 methods = {
     "data": ["discover", "complex", "entity", "event", "mapping/UniProt", "pathway", "pathways/low/diagram/entity"],
     "interactors": ["static/molecule"]
@@ -15,6 +18,18 @@ options = {
 }
 
 class ReactomeInstance(BaseAPIInterface):
+    METHODS = {
+        "data-discover": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "id": (str, None, True),
+            },
+            "group_queries": [None],
+            "separator": None
+        }
+    }
+
     def __init__(
             self, 
             cache_dir: Optional[str] = None,
@@ -85,8 +100,8 @@ class ReactomeInstance(BaseAPIInterface):
         if option and not isinstance(option, str):
             raise ValueError("Option must be a string if provided.")
         
-        primary_method = method.split("/")[0]
-        secondary_method = "/".join(method.split("/")[1:])
+        primary_method = method.split("-")[0]
+        secondary_method = "/".join(method.split("-")[1:])
         if primary_method not in methods.keys():
             raise ValueError(f"Method '{primary_method}' is not supported. Supported methods are: {list(methods.keys())}")
         if secondary_method not in methods[primary_method]:
@@ -99,9 +114,7 @@ class ReactomeInstance(BaseAPIInterface):
             self.validate_query(query)
             q = query.get("id", "").strip()
         
-           
-        #url = f"{REACTOME.API_URL}data/pathway/{query}/containedEvents"
-        url = f"{REACTOME.API_URL}{method}/{q}/{option}"
+        url = f"{REACTOME.API_URL}{method.replace('-', '/')}/{q}/{option}"
 
         if isinstance(query, dict):
             url += "?"

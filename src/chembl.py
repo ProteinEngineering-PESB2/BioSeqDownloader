@@ -1,22 +1,49 @@
 import os, re
 from typing import Optional, Union, Dict, List, Any
 import requests
+from requests import Request
+from requests.exceptions import RequestException
 
 from .base import BaseAPIInterface
 from .constants import CHEMBL
+from .utils import validate_parameters
 
 # For the moment, only activity is necessary, but more methods can be added later.
-METHODS = [
-    "activity",
-    "binding_site",
-]
+# METHODS = [
+#     "activity",
+#     "binding_site",
+# ]
 
-METHODS_FORMATS = {
-    "activity": ["json", "xml"],
-    "binding_site": ["json", "xml"],
-}
+# METHODS_FORMATS = {
+#     "activity": ["json", "xml"],
+#     "binding_site": ["json", "xml"],
+# }
 
 class ChEMBLInterface(BaseAPIInterface):
+    METHODS = {
+        "activity": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "target_chembl_id": (str, None, True),
+                "pchembl_value": (float, None, False),
+                "format": (str, "json", False),
+            },
+            "group_queries": [None],
+            "separator": None
+        },
+        "binding_site": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "target_chembl_id": (str, None, True),
+                "format": (str, "json", False),
+            },
+            "group_queries": [None],
+            "separator": None
+        }
+    }
+
     def __init__(
             self,
             cache_dir: Optional[str] = None,
@@ -43,6 +70,7 @@ class ChEMBLInterface(BaseAPIInterface):
         self.output_dir = output_dir or cache_dir
         os.makedirs(self.output_dir, exist_ok=True)
 
+    # DEPRECATED - Use validate_parameters instead
     def validate_query(self, method: str, query: Dict):
         """
         Validate the query parameters.
@@ -89,6 +117,8 @@ class ChEMBLInterface(BaseAPIInterface):
 
             if 'activities' in data.keys() and isinstance(data['activities'], list):
                 responses.extend(data['activities'])
+            elif 'binding_sites' in data.keys() and isinstance(data['binding_sites'], list):
+                responses.extend(data['binding_sites'])
             else:
                 responses.append(data)
 
@@ -117,32 +147,28 @@ class ChEMBLInterface(BaseAPIInterface):
         Returns:
             any: response from the API.
         """
-        format = kwargs.get("format", "json")
         pages_to_fetch = kwargs.get("pages_to_fetch", 1)
-
-        if method not in METHODS:
-            raise ValueError(f"Method {method} is not supported. Supported methods are: {', '.join(METHODS)}.")
-
-        if format not in METHODS_FORMATS.get(method, []):
-            raise ValueError(f"Format {format} is not supported for method {method}. Supported formats are: {', '.join(METHODS_FORMATS.get(method, []))}.")
-
+        
+        # Validate method and format
+        if method not in self.METHODS.keys():
+            raise ValueError(f"Method {method} is not supported. Supported methods are: {', '.join(self.METHODS.keys())}.")
 
         if not isinstance(query, (str, dict)):
             raise ValueError("Query must be a string or a dictionary.")
         
-        
-        if isinstance(query, dict):
-            self.validate_query(method, query)
-            # Convert dictionary to a query string
-            query = "&".join(f"{key}={value}" for key, value in query.items())
-        elif isinstance(query, str) and re.match(r"^CHEMBL\d+$", query):
-            # If query is a string and matches the ChEMBL ID pattern, use it directly
-            query = f"target_chembl_id={query}"
+        _, _, parameters, inputs = self.initialize_method_parameters(query, method, self.METHODS, **kwargs)
+
+        # Validate and clean parameters
+        try:
+            validated_params = validate_parameters(inputs, parameters)
+        except ValueError as e:
+            raise ValueError(f"Invalid parameters for method '{method}': {e}")
+
+        # Convert dictionary to a query string
+        query = "&".join(f"{key}={value}" for key, value in validated_params.items())
 
         # Generate url
         url = f"{CHEMBL.API_URL}{method}?{query}"
-
-        url += f"&format={format}"
 
         return self.fetch_pages(url, method, pages_to_fetch)
 
@@ -195,7 +221,7 @@ class ChEMBLInterface(BaseAPIInterface):
 
         if method is None:
             method = "activity"
-        if method not in METHODS:
+        if method not in self.METHODS.keys():
             raise ValueError(f"Method {method} is not supported. Supported methods are: {', '.join(METHODS)}.")
         
         return super().get_dummy(

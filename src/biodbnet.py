@@ -279,6 +279,7 @@ class BioDBNetInterface(BaseAPIInterface):
                     return response.json()
         except RequestException as e:
             print(f"Error fetching {query} for method '{method}': {e}")
+            print("Response:", response.text)
             return {}
 
 

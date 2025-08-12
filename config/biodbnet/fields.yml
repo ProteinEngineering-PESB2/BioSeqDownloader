@@ -45,6 +45,7 @@ db2db:
   genbank_protein_gi: GenBank Protein GI
   gene_id: Gene ID
   gene_info: Gene Info
+  gene_symbol: Gene Symbol
   gene_symbol_and_synonyms: Gene Symbol and Synonyms
   gene_symbol_ordered_locus: Gene Symbol Ordered Locus
   gene_symbol_orf: Gene Symbol ORF

@@ -26,9 +26,29 @@ db_types = {
 }
 
 # TODO add modifiers definitions
-
+# TODO Because this API uses an unique type of query
+# I did not updated the METHODS with fetch()
 
 class InterproInstance(BaseAPIInterface):
+    METHODS = {
+        "entry": {
+            "http_method": "GET",
+            "path_param": None,
+            "parameters": {
+                "id": (str, None, True),
+                "db": (str, None, True),
+                "modifiers": (dict, None, True),
+                "filters": (list, None, True),
+                "entry_integration": (str, None, True),
+                "filter_type": (str, None, True),
+                "filter_db": (str, None, True),
+                "filter_value": (str, None, True)
+            },
+            "group_queries": [None],
+            "separator": None
+        }
+    }
+
     def __init__(
             self,
             cache_dir: Optional[str] = None,

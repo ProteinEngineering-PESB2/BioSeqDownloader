@@ -137,12 +137,22 @@ class BaseAPIInterface(ABC):
         Returns:
             dict: Filtered and optionally transformed dictionary.
         """
-        result = {
-            k: sorted(v) if sort_lists and isinstance(v, list) else v
-            for k, v in sorted(input_dict.items())
-            if k not in self.get_cache_ignore_keys()
-        }
+        result = {}
+        for k, v in sorted(input_dict.items()):
+            if k in self.get_cache_ignore_keys():
+                continue
+            if sort_lists and isinstance(v, list):
+                # Solo ordena si los elementos son comparables (no dict)
+                if all(not isinstance(item, dict) for item in v):
+                    v = sorted(v)
+            result[k] = v
         return result
+        # result = {
+        #     k: sorted(v) if sort_lists and isinstance(v, list) else v
+        #     for k, v in sorted(input_dict.items())
+        #     if k not in self.get_cache_ignore_keys()
+        # }
+        # return result
     
     def _make_cache_key(self, input_obj: Union[str, dict], **kwargs) -> str:
         """Generate a string key from the input object."""
@@ -692,6 +702,7 @@ class BaseAPIInterface(ABC):
             # values = list(query[group_key])
             subqueries = self.decompose_query(query, method, option)
             # Check cache per individual
+            print(subqueries)
             for identifier, subq in subqueries:
                 cache_key = self._make_cache_key(identifier, **kwargs)
                 if self.has_results(cache_key):

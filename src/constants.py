@@ -12,11 +12,16 @@ DATABASES = {
     'chembl_ids': 'ChEMBL',
     'interpro_ids': 'InterPro',
     'kegg_ids': 'KEGG',
+    'panther_ids': 'PANTHER',
+    'pathwaycommons_ids': 'PathwayCommons',
     'pdb_ids': 'PDB',
     'pfam_ids': 'Pfam',
+    'pride_ids': 'PRIDE',
     'reactome_ids': 'Reactome',
     'refseq_ids': 'RefSeq',
-    'string_ids': 'STRING',
+    'rhea_ids': 'Rhea',
+    'chebi_ids': 'ChEBI',
+    'string_ids': 'STRING'
 }
 
 BASE_CACHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.cache"))

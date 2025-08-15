@@ -17,7 +17,17 @@ def extract_gene_names(gene_names: List) -> List[str]:
 
 def extract_database_terms(xrefs: List, database: str) -> List[str]:
     """Extracts database terms"""
-    return [x['id'] for x in xrefs if isinstance(x, dict) and x.get('database') in database]
+    # Comment solution
+    if all("reaction" in xref for xref in xrefs if isinstance(xrefs, list)):
+        ids = []
+        for xref in xrefs:
+            for reaction_xref in xref.get("reaction", {}).get("reactionCrossReferences", []):
+                if reaction_xref.get("database") == database:
+                    ids.append(reaction_xref.get("id"))
+        return ids
+    # Normal solution
+    else:
+        return [x['id'] for x in xrefs if isinstance(x, dict) and x.get('database') in database]
 
 def extract_references(refs: List) -> List[Dict]:
     """Extracts references"""

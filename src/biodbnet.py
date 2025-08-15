@@ -217,7 +217,7 @@ class BioDBNetInterface(BaseAPIInterface):
                 "outputs": (str, "genesymbol,affyid,go-biologicalprocess,go-cellularcomponent,go-molecularfunction,goid", True),
                 "taxonId": (str, None, True)
             },
-            "group_queries": ["inputValues", "outputs"],
+            "group_queries": ["inputValues"],
             "separator": ","
         }
     }
@@ -254,6 +254,8 @@ class BioDBNetInterface(BaseAPIInterface):
         http_method, _, parameters, inputs = self.initialize_method_parameters(query, method, self.METHODS, **kwargs)
 
         inputs.update({"method": method})
+
+        inputs["outputs"] = ",".join(inputs.get("outputs", [])) if isinstance(inputs.get("outputs"), list) else inputs.get("outputs", "")
 
         req = Request(
             method=http_method,

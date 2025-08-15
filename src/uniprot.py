@@ -197,14 +197,19 @@ class UniprotInterface(UniprotBase):
             'alphafold_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'biogrid_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'brenda_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'chebi_ids': ('comments', extract_database_terms),
             'chembl_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'go_terms': ('uniProtKBCrossReferences', extract_database_terms),
             'interpro_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'kegg_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'panther_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'pathwaycommons_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'pdb_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'pfam_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'pride_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'reactome_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'refseq_ids': ('uniProtKBCrossReferences', extract_database_terms),
+            'rhea_ids': ('comments', extract_database_terms),
             'string_ids': ('uniProtKBCrossReferences', extract_database_terms),
             'references': ('references', extract_references),
             'features': ('features', extract_features),
@@ -449,7 +454,7 @@ class UniprotInterface(UniprotBase):
                     if key.isdigit():  # For array indices
                         key = int(key)
                     data = data.get(key, {})
-                
+
                 # Extract the value using the specific function
                 if field in DATABASES.keys():
                     parsed[field] = extractor(data, DATABASES[field]) if data else None

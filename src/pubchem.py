@@ -133,8 +133,11 @@ class PubChemInterface(BaseAPIInterface):
         url = f"{PUBCHEM.API_URL}{method}"
 
         for key, value in validated_params.items():
-            url += f"/{key}/{value}"
-        
+            url += f"/{key}/{value}" if key != "taxid" else ""
+
+        if "taxid" in validated_params:
+            url += f"/{validated_params['taxid']}"
+
         if option and option != "default":
             url += f"/{option}"
         url += "/json"  # Assuming JSON output for simplicity

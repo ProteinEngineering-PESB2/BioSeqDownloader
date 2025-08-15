@@ -179,7 +179,8 @@ class PathwayCommonsInterface(BaseAPIInterface):
             response = self.session.send(prepared)
             self._delay()
             response.raise_for_status()
-
+            if response.content == b"":
+                return {}
             response = response.json()
             if "searchHit" in response.keys():
                 response = response["searchHit"]

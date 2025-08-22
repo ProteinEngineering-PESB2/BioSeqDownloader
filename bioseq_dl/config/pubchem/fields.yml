@@ -1,0 +1,112 @@
+compound:
+  default:
+    cid: id.id.cid
+    atoms_aids: atoms.aid
+    atoms_elements: atoms.element
+    bonds_aid1: bonds.aid1
+    bonds_aid2: bonds.aid2
+    bonds_order: bonds.order
+    charge: charge
+    props: props
+    count: count
+  synonyms:
+    id: id.id.cid
+    atoms: atoms
+    bonds: bonds
+    coords: coords
+    charge: charge
+    props: props
+    count: count
+  record:
+    id: id.id.cid
+    atoms: atoms
+    bonds: bonds
+    coords: coords
+    charge: charge
+    props: props
+    count: count
+  sids:
+    cid: CID
+    sid: SID
+  aids:
+    cid: CID
+    aid: AID
+  cids:
+    cid: CID
+  assaysummary:
+    aid: AID
+    panel_member_id: Panel Member ID
+    sid: SID
+    cid: CID
+    activity_outcome: Activity Outcome
+    target_accession: Target Accession
+    target_geneid: Target GeneID
+    activity_value_um: Activity Value [uM]
+    activity_name: Activity Name
+    assay_name: Assay Name
+    assay_type: Assay Type
+    pubmed_id: PubMed ID
+    rna_i: RNAi
+  description:
+    cid: CID
+    title: Title
+    description: Description
+    description_source_name: DescriptionSourceName
+    description_url: DescriptionURL
+protein:
+  summary:
+    protein_accession: ProteinAccession
+    name: Name
+    taxonomy_id: TaxonomyID
+    taxonomy: Taxonomy
+    synonym: Synonym
+  aids:
+    protein_accession: ProteinAccession
+    aid: AID
+  concise:
+    aid: AID
+    sid: SID
+    cid: CID
+    activity_outcome: Activity Outcome
+    target_accession: Target Accession
+    target_geneid: Target GeneID
+    activity_name: Activity Name
+    activity_qualifier: Activity Qualifier
+    activity_value_um: Activity Value [uM]
+    assay_name: Assay Name
+    assay_type: Assay Type
+    pubmed_id: PubMed ID
+    rna_i: RNAi
+  pwaccs:
+    protein_accession: ProteinAccession
+    pathway_accession: PathwayAccession
+gene:
+  pwaccs:
+    gene_id: GeneID
+    pathway_accession: PathwayAccession
+  concise:
+    aid: AID
+    sid: SID
+    cid: CID
+    activity_outcome: Activity Outcome
+    target_accession: Target Accession
+    target_geneid: Target GeneID
+    activity_name: Activity Name
+    activity_qualifier: Activity Qualifier
+    activity_value_um: Activity Value [uM]
+    assay_name: Assay Name
+    assay_type: Assay Type
+    pubmed_id: PubMed ID
+    rna_i: RNAi
+  aids:    
+    protein_accession: ProteinAccession
+    aid: AID
+  summary:
+    gene_id: GeneID
+    symbol: Symbol
+    name: Name
+    taxonomy_id: TaxonomyID
+    taxonomy: Taxonomy
+    description: Description
+    synonym: Synonym
+  

@@ -1,0 +1,24 @@
+ontology-term:
+  go_term: goid
+  label: label
+  definition: definition
+
+ontology-term-graph:
+  topology: topology_graph_json
+
+go:
+  go_term: goid
+  label: label
+  definition: definition
+  comment: comment
+  synonyms: synonyms
+  related_synonyms: relatedSynonyms
+
+bioentity-function:
+  label: bioentity_label
+  name: bioentity_name
+  tax_id: taxon
+  organism: taxon_label
+  evidence_type: evidence_type
+  evidence: evidence
+  synonym: synonym

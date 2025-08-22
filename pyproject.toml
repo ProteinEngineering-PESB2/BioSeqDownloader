@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bioseqdownloader"
+version = "0.1.0"
+description = "Tool to download and integrate biological data from multiple APIs (UniProt, AlphaFold, BioGRID, KEGG, etc.)"
+readme = "README.md"
+authors = [
+    { name = "Kren AI Lab", email = "krenai@umag.cl" }
+]
+requires-python = ">=3.9"
+
+classifiers = [
+    "Programming Language :: Python :: 3.10",
+    "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "pandas",
+    "tqdm",
+    "requests",
+    "rcsb-api",
+    "biopython",
+    "zeep",
+    "python-dotenv",
+    "pyyaml",
+    "beautifulsoup4",
+    "typer",
+    "gradio"
+]
+
+[project.scripts]
+bioseq-dl = "bioseq_dl.cli.main:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools.package-data]
+bioseq_dl = ["config/**/*.yml"]
+
+[project.urls]
+Homepage = "https://github.com/ProteinEngineering-PESB2/BioSeqDownloader"
+Issues = "https://github.com/ProteinEngineering-PESB2/BioSeqDownloader/issues"

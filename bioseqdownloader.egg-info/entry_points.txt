@@ -1,0 +1,2 @@
+[console_scripts]
+bioseq-dl = bioseq_dl.cli.main:app

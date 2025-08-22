@@ -20,6 +20,7 @@ To set up **BioSeqDownloader**, follow these steps:
     cd BioSeqDownloader
     conda env create -f environment.yml
     ```
+4. Para los usuarios que usan el paguete, instalar blast
 
 # Usage
 

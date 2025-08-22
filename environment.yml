@@ -14,3 +14,4 @@ dependencies:
     - dotenv
     - pyyaml
     - beautifulsoup4
+    - typer

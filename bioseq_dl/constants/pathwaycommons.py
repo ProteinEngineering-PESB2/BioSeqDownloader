@@ -1,0 +1,51 @@
+OUTPUT_FORMATS = [
+    "biopax",
+    "gsea",
+    "jsonld",
+    "sbgn",
+    "sif",
+    "txt"
+]
+PATTERNS = [
+    "controls-state-change-of",
+    "controls-transport-of",
+    "controls-phosphorylation-of",
+    "controls-expression-of",
+    "catalysis-precedes",
+    "in-complex-with",
+    "interacts-with",
+    "neighbor-of",
+    "consumption-controlled-by",
+    "controls-production-of",
+    "controls-transport-of-chemical",
+    "chemical-affects",
+    "reacts-with",
+    "used-to-produce"
+]
+
+DATASOURCES = [
+    "reactome",
+    "pathway",
+    "phosphositeplus",
+    "humancyc",
+    "hprd",
+    "pantherdb",
+    "dip",
+    "biogrid",
+    "intact",
+    "bind",
+    "corum",
+    "msigdb",
+    "mirtarbase",
+    "drugbank",
+    "recon x",
+    "academic",
+    "kegg",
+    "inoh",
+    "netpath",
+    "pathbank",
+    "innatedb",
+    "biofactoid",
+    "chebi",
+    "uniprot",
+    "unichem"]

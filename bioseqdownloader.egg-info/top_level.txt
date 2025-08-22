@@ -1,0 +1,6 @@
+bioseq_dl
+examples
+results
+scripts
+tests
+uniprot_search
